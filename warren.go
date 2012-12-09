@@ -11,6 +11,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -36,6 +37,11 @@ func initLogging() {
 	log.SetOutput(f)
 }
 
+type ccMsg struct {
+	Temperature *float32    `json:"temperature"`
+	Watts       map[string]int `json:"watts,omitempty"`
+}
+
 func currentCost() error {
 	msgReader, err := gocc.NewSerialMessageReader(*ccSerialPort)
 	if err != nil {
@@ -44,31 +50,33 @@ func currentCost() error {
 	defer msgReader.Close()
 
 	for {
-		data := make(map[string]interface{})
-		if msg, err := msgReader.ReadMessage(); err != nil {
+		msg, err := msgReader.ReadMessage()
+		if err != nil {
 			return err
-		} else {
-			data["temperature"] = msg.Temperature
 		}
 
-		if len(data) != 0 {
-			jsonData, err := json.Marshal(data)
-			if err != nil {
-				log.Printf("Error encoding Current Cost data as JSON: %v", err)
-			}
-			log.Printf("jsonData = %s", jsonData)
-			reqBuf := bytes.NewBuffer(jsonData)
-			resp, err := http.Post(*serieslyUrl, "application/json", reqBuf)
-			if err != nil {
-				log.Printf("Error sending JSON to %s: %v", *serieslyUrl, err)
-			} else if resp.StatusCode != http.StatusCreated {
-				respBuf := &bytes.Buffer{}
-				_, _ = io.CopyN(respBuf, resp.Body, 80)
-				log.Printf("HTTP response status %d, body: %s", resp.StatusCode, respBuf.Bytes())
-			}
-			_, _ = io.Copy(ioutil.Discard, resp.Body)
-			resp.Body.Close()
+		data := &ccMsg{}
+		data.Temperature = msg.Temperature
+		if msg.Sensor != nil && *msg.Sensor >= 0 && msg.Channel1 != nil {
+			data.Watts = map[string]int{strconv.Itoa(*msg.Sensor): msg.Channel1.Watts}
 		}
+
+		jsonData, err := json.Marshal(data)
+		if err != nil {
+			log.Printf("Error encoding Current Cost data as JSON: %v", err)
+		}
+		log.Printf("jsonData = %s", jsonData)
+		reqBuf := bytes.NewBuffer(jsonData)
+		resp, err := http.Post(*serieslyUrl, "application/json", reqBuf)
+		if err != nil {
+			log.Printf("Error sending JSON to %s: %v", *serieslyUrl, err)
+		} else if resp.StatusCode != http.StatusCreated {
+			respBuf := &bytes.Buffer{}
+			_, _ = io.CopyN(respBuf, resp.Body, 80)
+			log.Printf("HTTP response status %d, body: %s", resp.StatusCode, respBuf.Bytes())
+		}
+		_, _ = io.Copy(ioutil.Discard, resp.Body)
+		resp.Body.Close()
 	}
 	panic("unreachable")
 }
