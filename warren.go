@@ -38,7 +38,7 @@ func initLogging() {
 }
 
 type ccMsg struct {
-	Temperature *float32    `json:"temperature"`
+	Temperature *float32       `json:"temperature,omitempty"`
 	Watts       map[string]int `json:"watts,omitempty"`
 }
 
@@ -62,6 +62,10 @@ func currentCost() error {
 		}
 
 		jsonData, err := json.Marshal(data)
+		if len(jsonData) == 2 {
+			// No data - "{}".
+			continue
+		}
 		if err != nil {
 			log.Printf("Error encoding Current Cost data as JSON: %v", err)
 		}
