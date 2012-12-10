@@ -78,9 +78,9 @@ func currentCost() error {
 			respBuf := &bytes.Buffer{}
 			_, _ = io.CopyN(respBuf, resp.Body, 80)
 			log.Printf("HTTP response status %d, body: %s", resp.StatusCode, respBuf.Bytes())
+			_, _ = io.Copy(ioutil.Discard, resp.Body)
+			resp.Body.Close()
 		}
-		_, _ = io.Copy(ioutil.Discard, resp.Body)
-		resp.Body.Close()
 	}
 	panic("unreachable")
 }
