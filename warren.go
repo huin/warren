@@ -74,10 +74,12 @@ func currentCost() error {
 		resp, err := http.Post(*serieslyUrl, "application/json", reqBuf)
 		if err != nil {
 			log.Printf("Error sending JSON to %s: %v", *serieslyUrl, err)
-		} else if resp.StatusCode != http.StatusCreated {
-			respBuf := &bytes.Buffer{}
-			_, _ = io.CopyN(respBuf, resp.Body, 80)
-			log.Printf("HTTP response status %d, body: %s", resp.StatusCode, respBuf.Bytes())
+		} else {
+			if resp.StatusCode != http.StatusCreated {
+				respBuf := &bytes.Buffer{}
+				_, _ = io.CopyN(respBuf, resp.Body, 80)
+				log.Printf("Unexpected HTTP response status %d, body: %s", resp.StatusCode, respBuf.Bytes())
+			}
 			_, _ = io.Copy(ioutil.Discard, resp.Body)
 			resp.Body.Close()
 		}
