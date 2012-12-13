@@ -69,7 +69,6 @@ func currentCost() error {
 		if err != nil {
 			log.Printf("Error encoding Current Cost data as JSON: %v", err)
 		}
-		log.Printf("jsonData = %s", jsonData)
 		reqBuf := bytes.NewBuffer(jsonData)
 		resp, err := http.Post(*serieslyUrl, "application/json", reqBuf)
 		if err != nil {
