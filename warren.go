@@ -33,7 +33,7 @@ func wattsReading(now int64, sensor, id, channel, watts int) []interface{} {
 	return []interface{}{now, "cc", sensor, id, channel, watts}
 }
 
-func currentCost(cfg *CurrentCostConfig, influxdb *ifl.Client) error {
+func currentCost(cfg *CurrentCostConfig, influxChan chan<- []*ifl.Series) error {
 	msgReader, err := gocc.NewSerialMessageReader(cfg.Device)
 	if err != nil {
 		return err
@@ -77,9 +77,26 @@ func currentCost(cfg *CurrentCostConfig, influxdb *ifl.Client) error {
 			}
 		}
 
-		if err := influxdb.WriteSeriesWithTimePrecision(series, ifl.Second); err != nil {
-			return err
+		influxChan <- series
+	}
+}
+
+func influxSender(cfg *ifl.ClientConfig, influxChan <-chan []*ifl.Series) {
+	for {
+		influxdb, err := ifl.NewClient(cfg)
+		if err != nil {
+			log.Print("Failed to connect to influxdb: ", err)
 		}
+
+		for series := range influxChan {
+			if err := influxdb.WriteSeriesWithTimePrecision(series, ifl.Second); err != nil {
+				log.Print("Failed to send to influxdb: ", err)
+				break
+			}
+		}
+
+		// Avoid tightlooping on recurring failure.
+		time.Sleep(5 * time.Second)
 	}
 }
 
@@ -118,13 +135,12 @@ func main() {
 	}
 	initLogging(config.LogPath)
 
-	influxdb, err := ifl.NewClient(&config.InfluxDB)
-	if err != nil {
-		log.Fatal("Failed to connect to influxdb: ", err)
-	}
+	influxChan := make(chan []*ifl.Series)
+
+	go influxSender(&config.InfluxDB, influxChan)
 
 	for {
-		err := currentCost(&config.CurrentCost, influxdb)
+		err := currentCost(&config.CurrentCost, influxChan)
 		log.Print("Current Cost monitoring error: ", err)
 
 		// Avoid tightlooping on recurring failure.
