@@ -1,49 +1,40 @@
 // warren takes home monitoring data and feeds it into
-// [seriesly](https://github.com/dustin/seriesly).
+// [influxdb](http://influxdb.org/).
 package main
 
 import (
-	"bytes"
-	"encoding/json"
 	"flag"
-	"io"
-	"io/ioutil"
+	"fmt"
 	"log"
-	"net/http"
 	"os"
-	"strconv"
 	"syscall"
 	"time"
 
+	"github.com/BurntSushi/toml"
 	"github.com/huin/gocc"
+	ifl "github.com/influxdb/influxdb-go"
 )
 
 var (
-	serieslyUrl  = flag.String("seriesly-url", "", "HTTP URL to Seriesly server database, e.g http://localhost:3133/db")
-	ccSerialPort = flag.String("cc-port", "/dev/ttyUSB0", "Filesystem path to Current Cost serial port")
-	logPath      = flag.String("log-path", "", "Log to file, default logs to STDERR.")
+	configFile = flag.String("config", "", "Path to configuration file")
 )
 
-func initLogging() {
-	if *logPath == "" {
-		// Leave default logging as STDERR.
-		return
-	}
-
-	f, err := os.OpenFile(*logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, syscall.S_IWUSR|syscall.S_IRUSR)
-	if err != nil {
-		log.Fatalf("Failed to open log file: %v", err)
-	}
-	log.SetOutput(f)
+type Config struct {
+	LogPath     string
+	InfluxDB    ifl.ClientConfig
+	CurrentCost CurrentCostConfig
 }
 
-type ccMsg struct {
-	Temperature *float32       `json:"temperature,omitempty"`
-	Watts       map[string]int `json:"watts,omitempty"`
+type CurrentCostConfig struct {
+	Device string
 }
 
-func currentCost() error {
-	msgReader, err := gocc.NewSerialMessageReader(*ccSerialPort)
+func wattsReading(now int64, sensor, id, channel, watts int) []interface{} {
+	return []interface{}{now, "cc", sensor, id, channel, watts}
+}
+
+func currentCost(cfg *CurrentCostConfig, influxdb *ifl.Client) error {
+	msgReader, err := gocc.NewSerialMessageReader(cfg.Device)
 	if err != nil {
 		return err
 	}
@@ -54,48 +45,85 @@ func currentCost() error {
 		if err != nil {
 			return err
 		}
+		now := time.Now().Unix()
 
-		data := &ccMsg{}
-		data.Temperature = msg.Temperature
-		if msg.Sensor != nil && *msg.Sensor >= 0 && msg.Channel1 != nil {
-			data.Watts = map[string]int{strconv.Itoa(*msg.Sensor): msg.Channel1.Watts}
+		series := []*ifl.Series{
+			{
+				Name:    "temperature",
+				Columns: []string{"time", "source", "value"},
+				Points:  [][]interface{}{{now, "cc", msg.Temperature}},
+			},
 		}
 
-		jsonData, err := json.Marshal(data)
-		if len(jsonData) == 2 {
-			// No data - "{}".
-			continue
-		}
-		if err != nil {
-			log.Printf("Error encoding Current Cost data as JSON: %v", err)
-		}
-		reqBuf := bytes.NewBuffer(jsonData)
-		resp, err := http.Post(*serieslyUrl, "application/json", reqBuf)
-		if err != nil {
-			log.Printf("Error sending JSON to %s: %v", *serieslyUrl, err)
-		} else {
-			if resp.StatusCode != http.StatusCreated {
-				respBuf := &bytes.Buffer{}
-				_, _ = io.CopyN(respBuf, resp.Body, 80)
-				log.Printf("Unexpected HTTP response status %d, body: %s", resp.StatusCode, respBuf.Bytes())
+		if msg.Sensor != nil && *msg.Sensor >= 0 && msg.ID != nil {
+			pts := [][]interface{}{}
+
+			if msg.Channel1 != nil {
+				pts = append(pts, wattsReading(now, *msg.Sensor, *msg.ID, 1, msg.Channel1.Watts))
 			}
-			_, _ = io.Copy(ioutil.Discard, resp.Body)
-			resp.Body.Close()
+			if msg.Channel2 != nil {
+				pts = append(pts, wattsReading(now, *msg.Sensor, *msg.ID, 2, msg.Channel2.Watts))
+			}
+			if msg.Channel3 != nil {
+				pts = append(pts, wattsReading(now, *msg.Sensor, *msg.ID, 3, msg.Channel3.Watts))
+			}
+
+			if len(pts) > 0 {
+				series = append(series, &ifl.Series{
+					Name:    "watts",
+					Columns: []string{"time", "source", "sensor", "id", "channel", "value"},
+					Points:  pts,
+				})
+			}
 		}
+
+		influxdb.WriteSeriesWithTimePrecision(series, ifl.Second)
 	}
-	panic("unreachable")
+}
+
+func initLogging(logpath string) error {
+	if logpath == "" {
+		// Leave default logging as STDERR.
+		return nil
+	}
+
+	f, err := os.OpenFile(logpath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, syscall.S_IWUSR|syscall.S_IRUSR)
+	if err != nil {
+		return fmt.Errorf("failed to open log file: %v", err)
+	}
+	log.SetOutput(f)
+	return nil
+}
+
+func readConfig(filename string) (*Config, error) {
+	config := new(Config)
+	_, err := toml.DecodeFile(filename, &config)
+	if err != nil {
+		return nil, err
+	}
+	return config, nil
 }
 
 func main() {
 	flag.Parse()
-	initLogging()
+	if *configFile == "" {
+		log.Fatal("--config is required with a filename")
+	}
+	config, err := readConfig(*configFile)
 
-	if *serieslyUrl == "" {
-		log.Fatal("Bad value for --seriesly-url")
+	if err != nil {
+		log.Fatal("Failed to read configuration: ", err)
+	}
+	initLogging(config.LogPath)
+
+	influxdb, err := ifl.NewClient(&config.InfluxDB)
+	if err != nil {
+		log.Fatal("Failed to connect to influxdb: ", err)
 	}
 
 	for {
-		log.Print("Current Cost monitoring error: %v", currentCost())
+		err := currentCost(&config.CurrentCost, influxdb)
+		log.Print("Current Cost monitoring error: ", err)
 
 		// Avoid tightlooping on recurring failure.
 		time.Sleep(5 * time.Second)
