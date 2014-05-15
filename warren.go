@@ -77,7 +77,9 @@ func currentCost(cfg *CurrentCostConfig, influxdb *ifl.Client) error {
 			}
 		}
 
-		influxdb.WriteSeriesWithTimePrecision(series, ifl.Second)
+		if err := influxdb.WriteSeriesWithTimePrecision(series, ifl.Second); err != nil {
+			return err
+		}
 	}
 }
 
