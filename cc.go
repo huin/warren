@@ -8,10 +8,11 @@ import (
 )
 
 type CurrentCostConfig struct {
+	Name   string
 	Device string
 }
 
-func wattsReading(now int64, sensor, id, channel, watts int) []interface{} {
+func wattsReading(now int64, name string, sensor, id, channel, watts int) []interface{} {
 	return []interface{}{now, "cc", sensor, id, channel, watts}
 }
 
@@ -33,7 +34,7 @@ func currentCost(cfg CurrentCostConfig, influxChan chan<- []*ifl.Series) error {
 			{
 				Name:    "temperature",
 				Columns: []string{"time", "source", "value"},
-				Points:  [][]interface{}{{now, "cc", msg.Temperature}},
+				Points:  [][]interface{}{{now, cfg.Name, msg.Temperature}},
 			},
 		}
 
@@ -41,13 +42,13 @@ func currentCost(cfg CurrentCostConfig, influxChan chan<- []*ifl.Series) error {
 			pts := [][]interface{}{}
 
 			if msg.Channel1 != nil {
-				pts = append(pts, wattsReading(now, *msg.Sensor, *msg.ID, 1, msg.Channel1.Watts))
+				pts = append(pts, wattsReading(now, cfg.Name, *msg.Sensor, *msg.ID, 1, msg.Channel1.Watts))
 			}
 			if msg.Channel2 != nil {
-				pts = append(pts, wattsReading(now, *msg.Sensor, *msg.ID, 2, msg.Channel2.Watts))
+				pts = append(pts, wattsReading(now, cfg.Name, *msg.Sensor, *msg.ID, 2, msg.Channel2.Watts))
 			}
 			if msg.Channel3 != nil {
-				pts = append(pts, wattsReading(now, *msg.Sensor, *msg.ID, 3, msg.Channel3.Watts))
+				pts = append(pts, wattsReading(now, cfg.Name, *msg.Sensor, *msg.ID, 3, msg.Channel3.Watts))
 			}
 
 			if len(pts) > 0 {
