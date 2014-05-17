@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
-	"github.com/huin/gocc"
 	ifl "github.com/influxdb/influxdb-go"
 )
 
@@ -22,63 +21,7 @@ var (
 type Config struct {
 	LogPath     string
 	InfluxDB    ifl.ClientConfig
-	CurrentCost CurrentCostConfig
-}
-
-type CurrentCostConfig struct {
-	Device string
-}
-
-func wattsReading(now int64, sensor, id, channel, watts int) []interface{} {
-	return []interface{}{now, "cc", sensor, id, channel, watts}
-}
-
-func currentCost(cfg *CurrentCostConfig, influxChan chan<- []*ifl.Series) error {
-	msgReader, err := gocc.NewSerialMessageReader(cfg.Device)
-	if err != nil {
-		return err
-	}
-	defer msgReader.Close()
-
-	for {
-		msg, err := msgReader.ReadMessage()
-		if err != nil {
-			return err
-		}
-		now := time.Now().Unix()
-
-		series := []*ifl.Series{
-			{
-				Name:    "temperature",
-				Columns: []string{"time", "source", "value"},
-				Points:  [][]interface{}{{now, "cc", msg.Temperature}},
-			},
-		}
-
-		if msg.Sensor != nil && *msg.Sensor >= 0 && msg.ID != nil {
-			pts := [][]interface{}{}
-
-			if msg.Channel1 != nil {
-				pts = append(pts, wattsReading(now, *msg.Sensor, *msg.ID, 1, msg.Channel1.Watts))
-			}
-			if msg.Channel2 != nil {
-				pts = append(pts, wattsReading(now, *msg.Sensor, *msg.ID, 2, msg.Channel2.Watts))
-			}
-			if msg.Channel3 != nil {
-				pts = append(pts, wattsReading(now, *msg.Sensor, *msg.ID, 3, msg.Channel3.Watts))
-			}
-
-			if len(pts) > 0 {
-				series = append(series, &ifl.Series{
-					Name:    "watts",
-					Columns: []string{"time", "source", "sensor", "id", "channel", "value"},
-					Points:  pts,
-				})
-			}
-		}
-
-		influxChan <- series
-	}
+	CurrentCost []CurrentCostConfig
 }
 
 func influxSender(cfg *ifl.ClientConfig, influxChan <-chan []*ifl.Series) {
@@ -123,6 +66,18 @@ func readConfig(filename string) (*Config, error) {
 	return config, nil
 }
 
+func monitorLoop(desc string, fn func() error) {
+	for {
+		if err := fn(); err != nil {
+			log.Printf("%s monitoring error (restarting): %v", desc, err)
+		} else {
+			log.Printf("%s returned without error (restarting)", desc)
+		}
+		// Avoid tightlooping on recurring failure.
+		time.Sleep(5 * time.Second)
+	}
+}
+
 func main() {
 	flag.Parse()
 	if *configFile == "" {
@@ -137,13 +92,14 @@ func main() {
 
 	influxChan := make(chan []*ifl.Series)
 
-	go influxSender(&config.InfluxDB, influxChan)
-
-	for {
-		err := currentCost(&config.CurrentCost, influxChan)
-		log.Print("Current Cost monitoring error: ", err)
-
-		// Avoid tightlooping on recurring failure.
-		time.Sleep(5 * time.Second)
+	log.Printf("%d Current Cost configurations", len(config.CurrentCost))
+	for i := range config.CurrentCost {
+		cfgCopy := config.CurrentCost[i]
+		go monitorLoop("Current Cost", func() error {
+			return currentCost(&cfgCopy, influxChan)
+		})
 	}
+
+	log.Print("Starting InfluxDB sender")
+	influxSender(&config.InfluxDB, influxChan)
 }
