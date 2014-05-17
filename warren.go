@@ -21,12 +21,13 @@ var (
 type Config struct {
 	LogPath     string
 	InfluxDB    ifl.ClientConfig
+	System      *SystemConfig
 	CurrentCost []CurrentCostConfig
 }
 
-func influxSender(cfg *ifl.ClientConfig, influxChan <-chan []*ifl.Series) {
+func influxSender(cfg ifl.ClientConfig, influxChan <-chan []*ifl.Series) {
 	for {
-		influxdb, err := ifl.NewClient(cfg)
+		influxdb, err := ifl.NewClient(&cfg)
 		if err != nil {
 			log.Print("Failed to connect to influxdb: ", err)
 		}
@@ -92,14 +93,19 @@ func main() {
 
 	influxChan := make(chan []*ifl.Series)
 
-	log.Printf("%d Current Cost configurations", len(config.CurrentCost))
+	log.Printf("Starting %d Current Cost configurations", len(config.CurrentCost))
 	for i := range config.CurrentCost {
 		cfgCopy := config.CurrentCost[i]
 		go monitorLoop("Current Cost", func() error {
-			return currentCost(&cfgCopy, influxChan)
+			return currentCost(cfgCopy, influxChan)
 		})
 	}
 
+	if config.System != nil {
+		log.Print("Starting local system monitoring")
+		go systemMon(*config.System, influxChan)
+	}
+
 	log.Print("Starting InfluxDB sender")
-	influxSender(&config.InfluxDB, influxChan)
+	influxSender(config.InfluxDB, influxChan)
 }

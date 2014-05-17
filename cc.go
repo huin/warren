@@ -15,7 +15,7 @@ func wattsReading(now int64, sensor, id, channel, watts int) []interface{} {
 	return []interface{}{now, "cc", sensor, id, channel, watts}
 }
 
-func currentCost(cfg *CurrentCostConfig, influxChan chan<- []*ifl.Series) error {
+func currentCost(cfg CurrentCostConfig, influxChan chan<- []*ifl.Series) error {
 	msgReader, err := gocc.NewSerialMessageReader(cfg.Device)
 	if err != nil {
 		return err
