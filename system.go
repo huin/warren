@@ -33,13 +33,14 @@ func systemMon(cfg SystemConfig, influxChan chan<- []*ifl.Series) {
 			series = append(series, fsSeries(now, cfg.Name, cfg.Filesystems))
 		}
 
+		log.Print(series[0])
 		influxChan <- series
 	}
 }
 
 func fsSeries(now int64, systemName string, filesystems []string) *ifl.Series {
 	series := &ifl.Series{
-		Name: "system-fs",
+		Name: "system_fs",
 		Columns: []string{
 			"now", "system", "fs",
 			"size_bytes", "free_bytes", "unpriv_free_bytes",
