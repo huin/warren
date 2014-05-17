@@ -14,7 +14,7 @@ type SystemConfig struct {
 	Filesystems []string
 }
 
-func systemMon(cfg SystemConfig, influxChan <-chan []*ifl.Series) {
+func systemMon(cfg SystemConfig, influxChan chan<- []*ifl.Series) {
 	interval := cfg.Interval.Duration
 	if interval <= 0 {
 		oldInterval := interval
