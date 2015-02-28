@@ -12,5 +12,12 @@ exports data from:
 * Linux OS-exposed data.
 * [CurrentCost](http://www.currentcost.com/) serial XML output.
 
+## Installation
+
+`go get github.com/huin/warren`
+
+## Running
+
 `example.cfg` contains an example configuration, which is in the TOML
-configuration language. Comments in the file should (hopefully) explain 
+configuration language. Comments in the file should (hopefully) explain. Use
+the `--config` flag to provide the configuration.
