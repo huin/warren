@@ -1,12 +1,9 @@
 package linux
 
 import (
-	"io/ioutil"
 	"log"
 	"net"
 	"path/filepath"
-	"strconv"
-	"strings"
 	"syscall"
 
 	promm "github.com/prometheus/client_golang/prometheus"
@@ -17,11 +14,11 @@ const (
 	netPathSysClassNet  = "/sys/class/net"
 	netPathStatsTxBytes = "statistics/tx_bytes"
 	netPathStatsRxBytes = "statistics/rx_bytes"
-	intFileEnding       = "\x00\n"
 )
 
 type Config struct {
 	Filesystems []string
+	Cpu         CpuConfig
 	Labels      promm.Labels
 }
 
@@ -38,10 +35,16 @@ type LinuxCollector struct {
 	// Network metrics:
 	ifaceTxBytes *promm.CounterVec
 	ifaceRxBytes *promm.CounterVec
+
+	cpuCollector *cpuCollector
 }
 
-func NewLinuxCollector(cfg Config) *LinuxCollector {
+func NewLinuxCollector(cfg Config) (*LinuxCollector, error) {
 	fsLabelNames := []string{"mount"}
+	cpuCollector, err := newCpuCollector(cfg.Cpu, cfg.Labels)
+	if err != nil {
+		return nil, err
+	}
 	return &LinuxCollector{
 		cfg: cfg,
 		// Meta-metrics:
@@ -111,7 +114,8 @@ func NewLinuxCollector(cfg Config) *LinuxCollector {
 			},
 			[]string{"interface"},
 		),
-	}
+		cpuCollector: cpuCollector,
+	}, nil
 }
 
 func (sc *LinuxCollector) Describe(ch chan<- *promm.Desc) {
@@ -121,6 +125,7 @@ func (sc *LinuxCollector) Describe(ch chan<- *promm.Desc) {
 	sc.fsUnprivFreeBytes.Describe(ch)
 	sc.ifaceTxBytes.Describe(ch)
 	sc.ifaceRxBytes.Describe(ch)
+	sc.cpuCollector.Describe(ch)
 }
 
 func (sc *LinuxCollector) Collect(ch chan<- promm.Metric) {
@@ -161,30 +166,5 @@ func (sc *LinuxCollector) Collect(ch chan<- promm.Metric) {
 	sc.fsUnprivFreeBytes.Collect(ch)
 	sc.ifaceTxBytes.Collect(ch)
 	sc.ifaceRxBytes.Collect(ch)
-}
-
-func readIntFileIntoCounter(ctr promm.Counter, path string) {
-	value, err := readIntFile(path)
-	if err != nil {
-		log.Printf("Unable to read integer from file %q for counter %s: %v",
-			path, *ctr.Desc(), err)
-		return
-	}
-	ctr.Set(float64(value))
-}
-
-// Read a text file containing a single decimal integer. The number is assumed
-// to end at the first of: nul-zero byte, newline, or EOF. The file is read
-// into memory so should be short.
-func readIntFile(path string) (int64, error) {
-	data, err := ioutil.ReadFile(path)
-	if err != nil {
-		return 0, nil
-	}
-	s := string(data)
-	end := strings.IndexAny(s, intFileEnding)
-	if end < 0 {
-		end = len(s)
-	}
-	return strconv.ParseInt(s[0:end], 10, 64)
+	sc.cpuCollector.Collect(ch)
 }

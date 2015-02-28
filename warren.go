@@ -85,17 +85,21 @@ func main() {
 	for _, ccConfig := range config.CurrentCost {
 		ccc, err := cc.NewCurrentCostCollector(ccConfig)
 		if err != nil {
-			log.Fatal("Error in CurrentCost config: %v", err)
+			log.Fatal("Error in CurrentCost: ", err)
 		}
 		promm.MustRegister(ccc)
-		go monitorLoop("Current Cost", func() error {
+		go monitorLoop("CurrentCost", func() error {
 			return ccc.Run()
 		})
 	}
 
 	if config.System != nil {
 		log.Print("Starting local system monitoring")
-		promm.MustRegister(linux.NewLinuxCollector(*config.System))
+		lc, err := linux.NewLinuxCollector(*config.System)
+		if err != nil {
+			log.Fatal("Error in LinuxCollector: ", err)
+		}
+		promm.MustRegister(lc)
 	}
 
 	log.Print("Starting Prometheus metrics handler")
