@@ -1,5 +1,7 @@
-// warren takes home monitoring data and feeds it into
-// [influxdb](http://influxdb.org/).
+// Warren is a program to act as part of a monitoring system on a home network.
+// It exports data for external programs to acquire and log to timeseries
+// databases. Currently, Warren exports data in a way that is intended for
+// scraping by Prometheus - http://prometheus.io/.
 package main
 
 import (
