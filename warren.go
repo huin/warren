@@ -6,12 +6,13 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"syscall"
 	"time"
 
 	"github.com/BurntSushi/toml"
-	ifl "github.com/influxdb/influxdb-go"
+	promm "github.com/prometheus/client_golang/prometheus"
 )
 
 var (
@@ -20,28 +21,14 @@ var (
 
 type Config struct {
 	LogPath     string
-	InfluxDB    ifl.ClientConfig
+	Prometheus  PrometheusConfig
 	System      *SystemConfig
 	CurrentCost []CurrentCostConfig
 }
 
-func influxSender(cfg ifl.ClientConfig, influxChan <-chan []*ifl.Series) {
-	for {
-		influxdb, err := ifl.NewClient(&cfg)
-		if err != nil {
-			log.Print("Failed to connect to influxdb: ", err)
-		}
-
-		for series := range influxChan {
-			if err := influxdb.WriteSeriesWithTimePrecision(series, ifl.Second); err != nil {
-				log.Print("Failed to send to influxdb: ", err)
-				break
-			}
-		}
-
-		// Avoid tightlooping on recurring failure.
-		time.Sleep(5 * time.Second)
-	}
+type PrometheusConfig struct {
+	HandlerPath string
+	ServeAddr   string
 }
 
 func initLogging(logpath string) error {
@@ -85,27 +72,26 @@ func main() {
 		log.Fatal("--config is required with a filename")
 	}
 	config, err := readConfig(*configFile)
-
 	if err != nil {
 		log.Fatal("Failed to read configuration: ", err)
 	}
 	initLogging(config.LogPath)
 
-	influxChan := make(chan []*ifl.Series)
-
-	log.Printf("Starting %d Current Cost configurations", len(config.CurrentCost))
-	for i := range config.CurrentCost {
-		cfgCopy := config.CurrentCost[i]
+	log.Printf("Starting %d Current Cost collectors", len(config.CurrentCost))
+	for _, ccConfig := range config.CurrentCost {
+		ccc := NewCurrentCostCollector(ccConfig)
+		promm.MustRegister(ccc)
 		go monitorLoop("Current Cost", func() error {
-			return currentCost(cfgCopy, influxChan)
+			return ccc.Run()
 		})
 	}
 
 	if config.System != nil {
 		log.Print("Starting local system monitoring")
-		go systemMon(*config.System, influxChan)
+		promm.MustRegister(NewSystemCollector(*config.System))
 	}
 
-	log.Print("Starting InfluxDB sender")
-	influxSender(config.InfluxDB, influxChan)
+	log.Print("Starting Prometheus metrics handler")
+	http.Handle(config.Prometheus.HandlerPath, promm.Handler())
+	http.ListenAndServe(config.Prometheus.ServeAddr, nil)
 }

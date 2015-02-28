@@ -3,63 +3,111 @@ package main
 import (
 	"log"
 	"syscall"
-	"time"
 
-	ifl "github.com/influxdb/influxdb-go"
+	promm "github.com/prometheus/client_golang/prometheus"
+)
+
+const (
+	systemNamespace = "system"
 )
 
 type SystemConfig struct {
 	Name        string
-	Interval    duration
 	Filesystems []string
 }
 
-func systemMon(cfg SystemConfig, influxChan chan<- []*ifl.Series) {
-	interval := cfg.Interval.Duration
-	if interval <= 0 {
-		oldInterval := interval
-		interval = 10 * time.Minute
-		log.Print("System monitoring interval %v <= 0, defaulting to %v", oldInterval, interval)
-	}
+type SystemCollector struct {
+	cfg               SystemConfig
+	fsStatOps         *promm.CounterVec
+	fsSizeBytes       *promm.GaugeVec
+	fsFreeBytes       *promm.GaugeVec
+	fsUnprivFreeBytes *promm.GaugeVec
+	fsFiles           *promm.GaugeVec
+	fsFilesFree       *promm.GaugeVec
+}
 
-	for _ = range time.Tick(interval) {
-		// Ignore the time from the ticker, in case we were blocked doing
-		// something else when the tick was generated.
-		now := time.Now().Unix()
-
-		var series []*ifl.Series
-
-		if len(cfg.Filesystems) > 0 {
-			series = append(series, fsSeries(now, cfg.Name, cfg.Filesystems))
-		}
-
-		log.Print(series[0])
-		influxChan <- series
+func NewSystemCollector(cfg SystemConfig) *SystemCollector {
+	systemLabels := promm.Labels{"system": cfg.Name}
+	fsLabelNames := []string{"mount"}
+	return &SystemCollector{
+		cfg: cfg,
+		// Meta-metrics:
+		fsStatOps: promm.NewCounterVec(
+			promm.CounterOpts{
+				Namespace: systemNamespace, Name: "fs_stat_ops",
+				Help:        "Statfs calls by mount and result (cumulative calls).",
+				ConstLabels: systemLabels,
+			},
+			[]string{"mount", "result"},
+		),
+		// Filesystem metrics:
+		fsSizeBytes: promm.NewGaugeVec(
+			promm.GaugeOpts{
+				Namespace: systemNamespace, Name: "fs_size_bytes",
+				Help:        "Filesystem capacity (bytes).",
+				ConstLabels: systemLabels,
+			},
+			fsLabelNames,
+		),
+		fsFreeBytes: promm.NewGaugeVec(
+			promm.GaugeOpts{
+				Namespace: systemNamespace, Name: "fs_free_bytes",
+				Help:        "Filesystem free space (bytes).",
+				ConstLabels: systemLabels,
+			},
+			fsLabelNames,
+		),
+		fsUnprivFreeBytes: promm.NewGaugeVec(
+			promm.GaugeOpts{
+				Namespace: systemNamespace, Name: "fs_unpriv_free_bytes",
+				Help:        "Filesystem unpriviledged free space (bytes).",
+				ConstLabels: systemLabels,
+			},
+			fsLabelNames,
+		),
+		fsFiles: promm.NewGaugeVec(
+			promm.GaugeOpts{
+				Namespace: systemNamespace, Name: "fs_files",
+				Help:        "File count (files).",
+				ConstLabels: systemLabels,
+			},
+			fsLabelNames,
+		),
+		fsFilesFree: promm.NewGaugeVec(
+			promm.GaugeOpts{
+				Namespace: systemNamespace, Name: "fs_files_free",
+				Help:        "File free count (files).",
+				ConstLabels: systemLabels,
+			},
+			fsLabelNames,
+		),
 	}
 }
 
-func fsSeries(now int64, systemName string, filesystems []string) *ifl.Series {
-	series := &ifl.Series{
-		Name: "system_fs",
-		Columns: []string{
-			"now", "system", "fs",
-			"size_bytes", "free_bytes", "unpriv_free_bytes",
-			"files", "files_free",
-		},
-		Points: make([][]interface{}, 0, len(filesystems)),
-	}
-	for _, fs := range filesystems {
+func (sc *SystemCollector) Describe(ch chan<- *promm.Desc) {
+	sc.fsSizeBytes.Describe(ch)
+	sc.fsFreeBytes.Describe(ch)
+	sc.fsUnprivFreeBytes.Describe(ch)
+}
+
+func (sc *SystemCollector) Collect(ch chan<- promm.Metric) {
+	for _, fs := range sc.cfg.Filesystems {
 		var stat syscall.Statfs_t
 		if err := syscall.Statfs(fs, &stat); err != nil {
 			log.Print("Error stating filesystem %q: %v", fs, err)
+			sc.fsStatOps.With(promm.Labels{"mount": fs, "result": "error"}).Inc()
 			continue
 		}
+		sc.fsStatOps.With(promm.Labels{"mount": fs, "result": "ok"}).Inc()
+		mountLabels := promm.Labels{"mount": fs}
 		bs := uint64(stat.Bsize)
-		series.Points = append(series.Points, []interface{}{
-			now, systemName, fs,
-			bs * stat.Blocks, bs * stat.Bfree, stat.Bavail,
-			stat.Files, stat.Ffree,
-		})
+		sc.fsSizeBytes.With(mountLabels).Set(float64(bs * stat.Blocks))
+		sc.fsFreeBytes.With(mountLabels).Set(float64(bs * stat.Bfree))
+		sc.fsUnprivFreeBytes.With(mountLabels).Set(float64(bs * stat.Bavail))
+		sc.fsFiles.With(mountLabels).Set(float64(stat.Files))
+		sc.fsFilesFree.With(mountLabels).Set(float64(stat.Ffree))
 	}
-	return series
+	sc.fsSizeBytes.Collect(ch)
+	sc.fsFreeBytes.Collect(ch)
+	sc.fsUnprivFreeBytes.Collect(ch)
 }

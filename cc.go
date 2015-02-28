@@ -1,10 +1,14 @@
 package main
 
 import (
-	"time"
+	"strconv"
 
 	"github.com/huin/gocc"
-	ifl "github.com/influxdb/influxdb-go"
+	promm "github.com/prometheus/client_golang/prometheus"
+)
+
+const (
+	ccNamespace = "currentcost"
 )
 
 type CurrentCostConfig struct {
@@ -12,12 +16,59 @@ type CurrentCostConfig struct {
 	Device string
 }
 
-func wattsReading(now int64, name string, sensor, id, channel, watts int) []interface{} {
-	return []interface{}{now, "cc", sensor, id, channel, watts}
+type CurrentCostCollector struct {
+	cfg         CurrentCostConfig
+	temperature promm.Gauge
+	powerDraw   *promm.GaugeVec
 }
 
-func currentCost(cfg CurrentCostConfig, influxChan chan<- []*ifl.Series) error {
-	msgReader, err := gocc.NewSerialMessageReader(cfg.Device)
+func NewCurrentCostCollector(cfg CurrentCostConfig) *CurrentCostCollector {
+	monitorLabels := promm.Labels{"monitor": cfg.Name}
+	return &CurrentCostCollector{
+		cfg: cfg,
+		temperature: promm.NewGauge(promm.GaugeOpts{
+			Namespace: ccNamespace, Name: "temperature",
+			Help:        "Instananeous measured temperature at the monitor (degrees celcius).",
+			ConstLabels: monitorLabels,
+		}),
+		powerDraw: promm.NewGaugeVec(
+			promm.GaugeOpts{
+				Namespace: ccNamespace, Name: "power_draw",
+				Help:        "Instananeous power drawn measured by sensor (watts).",
+				ConstLabels: monitorLabels,
+			},
+			[]string{"sensor", "channel"},
+		),
+	}
+}
+
+func (ccc *CurrentCostCollector) Describe(ch chan<- *promm.Desc) {
+	ccc.temperature.Describe(ch)
+	ccc.powerDraw.Describe(ch)
+}
+
+func (ccc *CurrentCostCollector) Collect(ch chan<- promm.Metric) {
+	ccc.temperature.Collect(ch)
+	ccc.powerDraw.Collect(ch)
+}
+
+func (ccc *CurrentCostCollector) powerDrawReading(sensor, channel int, reading *gocc.Channel) {
+	if reading == nil {
+		return
+	}
+	ccc.powerDraw.With(promm.Labels{
+		"sensor":  strconv.Itoa(sensor),
+		"channel": strconv.Itoa(channel),
+	},
+	).Set(float64(reading.Watts))
+}
+
+// Runs the collector such that it receives updates from the CurrentCost device
+// and self-updates. If it returns with an error, it is possible to re-run,
+// although some errors might reccur. E.g the device might not exist. This
+// could be a permanent or temporary condition.
+func (ccc *CurrentCostCollector) Run() error {
+	msgReader, err := gocc.NewSerialMessageReader(ccc.cfg.Device)
 	if err != nil {
 		return err
 	}
@@ -28,38 +79,18 @@ func currentCost(cfg CurrentCostConfig, influxChan chan<- []*ifl.Series) error {
 		if err != nil {
 			return err
 		}
-		now := time.Now().Unix()
 
-		series := []*ifl.Series{
-			{
-				Name:    "temperature",
-				Columns: []string{"time", "source", "value"},
-				Points:  [][]interface{}{{now, cfg.Name, msg.Temperature}},
-			},
+		if msg.Temperature != nil {
+			ccc.temperature.Set(float64(*msg.Temperature))
 		}
 
 		if msg.Sensor != nil && *msg.Sensor >= 0 && msg.ID != nil {
-			pts := [][]interface{}{}
-
-			if msg.Channel1 != nil {
-				pts = append(pts, wattsReading(now, cfg.Name, *msg.Sensor, *msg.ID, 1, msg.Channel1.Watts))
-			}
-			if msg.Channel2 != nil {
-				pts = append(pts, wattsReading(now, cfg.Name, *msg.Sensor, *msg.ID, 2, msg.Channel2.Watts))
-			}
-			if msg.Channel3 != nil {
-				pts = append(pts, wattsReading(now, cfg.Name, *msg.Sensor, *msg.ID, 3, msg.Channel3.Watts))
-			}
-
-			if len(pts) > 0 {
-				series = append(series, &ifl.Series{
-					Name:    "watts",
-					Columns: []string{"time", "source", "sensor", "id", "channel", "value"},
-					Points:  pts,
-				})
-			}
+			ccc.powerDrawReading(*msg.Sensor, 1, msg.Channel1)
+			ccc.powerDrawReading(*msg.Sensor, 2, msg.Channel2)
+			ccc.powerDrawReading(*msg.Sensor, 3, msg.Channel3)
 		}
 
-		influxChan <- series
+		// TODO: Consider outputting historical data by accumulating their values
+		// into counters.
 	}
 }
