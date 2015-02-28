@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"strconv"
 
 	"github.com/huin/gocc"
@@ -14,17 +15,32 @@ const (
 type CurrentCostConfig struct {
 	Device string
 	Labels promm.Labels
+	Sensor map[string]Sensor
+}
+
+type Sensor struct {
+	Name string
 }
 
 type CurrentCostCollector struct {
 	cfg         CurrentCostConfig
+	sensorCfgs  map[int]Sensor
 	temperature promm.Gauge
 	powerDraw   *promm.GaugeVec
 }
 
-func NewCurrentCostCollector(cfg CurrentCostConfig) *CurrentCostCollector {
+func NewCurrentCostCollector(cfg CurrentCostConfig) (*CurrentCostCollector, error) {
+	sensorCfgs := map[int]Sensor{}
+	for sensorIdStr, sensorCfg := range cfg.Sensor {
+		sensorId, err := strconv.Atoi(sensorIdStr)
+		if err != nil || sensorId < 0 {
+			return nil, fmt.Errorf("bad sensor ID %q - must be an integer >= 0")
+		}
+		sensorCfgs[sensorId] = sensorCfg
+	}
 	return &CurrentCostCollector{
-		cfg: cfg,
+		cfg:        cfg,
+		sensorCfgs: sensorCfgs,
 		temperature: promm.NewGauge(promm.GaugeOpts{
 			Namespace: ccNamespace, Name: "temperature",
 			Help:        "Instananeous measured temperature at the monitor (degrees celcius).",
@@ -38,7 +54,7 @@ func NewCurrentCostCollector(cfg CurrentCostConfig) *CurrentCostCollector {
 			},
 			[]string{"sensor", "channel"},
 		),
-	}
+	}, nil
 }
 
 func (ccc *CurrentCostCollector) Describe(ch chan<- *promm.Desc) {
@@ -51,12 +67,12 @@ func (ccc *CurrentCostCollector) Collect(ch chan<- promm.Metric) {
 	ccc.powerDraw.Collect(ch)
 }
 
-func (ccc *CurrentCostCollector) powerDrawReading(sensor, channel int, reading *gocc.Channel) {
+func (ccc *CurrentCostCollector) powerDrawReading(sensorCfg *Sensor, channel int, reading *gocc.Channel) {
 	if reading == nil {
 		return
 	}
 	ccc.powerDraw.With(promm.Labels{
-		"sensor":  strconv.Itoa(sensor),
+		"sensor":  sensorCfg.Name,
 		"channel": strconv.Itoa(channel),
 	},
 	).Set(float64(reading.Watts))
@@ -84,9 +100,15 @@ func (ccc *CurrentCostCollector) Run() error {
 		}
 
 		if msg.Sensor != nil && *msg.Sensor >= 0 && msg.ID != nil {
-			ccc.powerDrawReading(*msg.Sensor, 1, msg.Channel1)
-			ccc.powerDrawReading(*msg.Sensor, 2, msg.Channel2)
-			ccc.powerDrawReading(*msg.Sensor, 3, msg.Channel3)
+			sensorCfg, ok := ccc.sensorCfgs[*msg.Sensor]
+			if !ok {
+				sensorCfg = Sensor{
+					Name: strconv.Itoa(*msg.Sensor),
+				}
+			}
+			ccc.powerDrawReading(&sensorCfg, 1, msg.Channel1)
+			ccc.powerDrawReading(&sensorCfg, 2, msg.Channel2)
+			ccc.powerDrawReading(&sensorCfg, 3, msg.Channel3)
 		}
 
 		// TODO: Consider outputting historical data by accumulating their values

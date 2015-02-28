@@ -76,11 +76,13 @@ func main() {
 		log.Fatal("Failed to read configuration: ", err)
 	}
 	initLogging(config.LogPath)
-	log.Print(config)
 
-	log.Printf("Starting %d Current Cost collectors", len(config.CurrentCost))
+	log.Printf("Starting %d CurrentCost collectors", len(config.CurrentCost))
 	for _, ccConfig := range config.CurrentCost {
-		ccc := NewCurrentCostCollector(ccConfig)
+		ccc, err := NewCurrentCostCollector(ccConfig)
+		if err != nil {
+			log.Fatal("Error in CurrentCost config: %v", err)
+		}
 		promm.MustRegister(ccc)
 		go monitorLoop("Current Cost", func() error {
 			return ccc.Run()
