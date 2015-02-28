@@ -1,4 +1,4 @@
-package main
+package cc
 
 import (
 	"fmt"
@@ -9,10 +9,10 @@ import (
 )
 
 const (
-	ccNamespace = "currentcost"
+	namespace = "currentcost"
 )
 
-type CurrentCostConfig struct {
+type Config struct {
 	Device string
 	Labels promm.Labels
 	Sensor map[string]Sensor
@@ -23,13 +23,13 @@ type Sensor struct {
 }
 
 type CurrentCostCollector struct {
-	cfg         CurrentCostConfig
+	cfg         Config
 	sensorCfgs  map[int]Sensor
 	temperature promm.Gauge
 	powerDraw   *promm.GaugeVec
 }
 
-func NewCurrentCostCollector(cfg CurrentCostConfig) (*CurrentCostCollector, error) {
+func NewCurrentCostCollector(cfg Config) (*CurrentCostCollector, error) {
 	sensorCfgs := map[int]Sensor{}
 	for sensorIdStr, sensorCfg := range cfg.Sensor {
 		sensorId, err := strconv.Atoi(sensorIdStr)
@@ -42,13 +42,13 @@ func NewCurrentCostCollector(cfg CurrentCostConfig) (*CurrentCostCollector, erro
 		cfg:        cfg,
 		sensorCfgs: sensorCfgs,
 		temperature: promm.NewGauge(promm.GaugeOpts{
-			Namespace: ccNamespace, Name: "temperature",
+			Namespace: namespace, Name: "temperature",
 			Help:        "Instananeous measured temperature at the monitor (degrees celcius).",
 			ConstLabels: cfg.Labels,
 		}),
 		powerDraw: promm.NewGaugeVec(
 			promm.GaugeOpts{
-				Namespace: ccNamespace, Name: "power_draw",
+				Namespace: namespace, Name: "power_draw",
 				Help:        "Instananeous power drawn measured by sensor (watts).",
 				ConstLabels: cfg.Labels,
 			},

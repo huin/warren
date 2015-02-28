@@ -1,4 +1,4 @@
-package main
+package linux
 
 import (
 	"log"
@@ -8,16 +8,16 @@ import (
 )
 
 const (
-	systemNamespace = "system"
+	namespace = "system"
 )
 
-type SystemConfig struct {
+type Config struct {
 	Filesystems []string
 	Labels      promm.Labels
 }
 
 type SystemCollector struct {
-	cfg               SystemConfig
+	cfg               Config
 	fsStatOps         *promm.CounterVec
 	fsSizeBytes       *promm.GaugeVec
 	fsFreeBytes       *promm.GaugeVec
@@ -26,14 +26,14 @@ type SystemCollector struct {
 	fsFilesFree       *promm.GaugeVec
 }
 
-func NewSystemCollector(cfg SystemConfig) *SystemCollector {
+func NewLinuxCollector(cfg Config) *SystemCollector {
 	fsLabelNames := []string{"mount"}
 	return &SystemCollector{
 		cfg: cfg,
 		// Meta-metrics:
 		fsStatOps: promm.NewCounterVec(
 			promm.CounterOpts{
-				Namespace: systemNamespace, Name: "fs_stat_ops",
+				Namespace: namespace, Name: "fs_stat_ops",
 				Help:        "Statfs calls by mount and result (cumulative calls).",
 				ConstLabels: cfg.Labels,
 			},
@@ -42,7 +42,7 @@ func NewSystemCollector(cfg SystemConfig) *SystemCollector {
 		// Filesystem metrics:
 		fsSizeBytes: promm.NewGaugeVec(
 			promm.GaugeOpts{
-				Namespace: systemNamespace, Name: "fs_size_bytes",
+				Namespace: namespace, Name: "fs_size_bytes",
 				Help:        "Filesystem capacity (bytes).",
 				ConstLabels: cfg.Labels,
 			},
@@ -50,7 +50,7 @@ func NewSystemCollector(cfg SystemConfig) *SystemCollector {
 		),
 		fsFreeBytes: promm.NewGaugeVec(
 			promm.GaugeOpts{
-				Namespace: systemNamespace, Name: "fs_free_bytes",
+				Namespace: namespace, Name: "fs_free_bytes",
 				Help:        "Filesystem free space (bytes).",
 				ConstLabels: cfg.Labels,
 			},
@@ -58,7 +58,7 @@ func NewSystemCollector(cfg SystemConfig) *SystemCollector {
 		),
 		fsUnprivFreeBytes: promm.NewGaugeVec(
 			promm.GaugeOpts{
-				Namespace: systemNamespace, Name: "fs_unpriv_free_bytes",
+				Namespace: namespace, Name: "fs_unpriv_free_bytes",
 				Help:        "Filesystem unpriviledged free space (bytes).",
 				ConstLabels: cfg.Labels,
 			},
@@ -66,7 +66,7 @@ func NewSystemCollector(cfg SystemConfig) *SystemCollector {
 		),
 		fsFiles: promm.NewGaugeVec(
 			promm.GaugeOpts{
-				Namespace: systemNamespace, Name: "fs_files",
+				Namespace: namespace, Name: "fs_files",
 				Help:        "File count (files).",
 				ConstLabels: cfg.Labels,
 			},
@@ -74,7 +74,7 @@ func NewSystemCollector(cfg SystemConfig) *SystemCollector {
 		),
 		fsFilesFree: promm.NewGaugeVec(
 			promm.GaugeOpts{
-				Namespace: systemNamespace, Name: "fs_files_free",
+				Namespace: namespace, Name: "fs_files_free",
 				Help:        "File free count (files).",
 				ConstLabels: cfg.Labels,
 			},
@@ -84,12 +84,14 @@ func NewSystemCollector(cfg SystemConfig) *SystemCollector {
 }
 
 func (sc *SystemCollector) Describe(ch chan<- *promm.Desc) {
+	sc.fsStatOps.Describe(ch)
 	sc.fsSizeBytes.Describe(ch)
 	sc.fsFreeBytes.Describe(ch)
 	sc.fsUnprivFreeBytes.Describe(ch)
 }
 
 func (sc *SystemCollector) Collect(ch chan<- promm.Metric) {
+	// Filesystems
 	for _, fs := range sc.cfg.Filesystems {
 		var stat syscall.Statfs_t
 		if err := syscall.Statfs(fs, &stat); err != nil {
@@ -106,6 +108,7 @@ func (sc *SystemCollector) Collect(ch chan<- promm.Metric) {
 		sc.fsFiles.With(mountLabels).Set(float64(stat.Files))
 		sc.fsFilesFree.With(mountLabels).Set(float64(stat.Ffree))
 	}
+	sc.fsStatOps.Collect(ch)
 	sc.fsSizeBytes.Collect(ch)
 	sc.fsFreeBytes.Collect(ch)
 	sc.fsUnprivFreeBytes.Collect(ch)

@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
+	"github.com/huin/warren/cc"
+	"github.com/huin/warren/linux"
 	promm "github.com/prometheus/client_golang/prometheus"
 )
 
@@ -22,8 +24,8 @@ var (
 type Config struct {
 	LogPath     string
 	Prometheus  PrometheusConfig
-	System      *SystemConfig
-	CurrentCost []CurrentCostConfig
+	System      *linux.Config
+	CurrentCost []cc.Config
 }
 
 type PrometheusConfig struct {
@@ -79,7 +81,7 @@ func main() {
 
 	log.Printf("Starting %d CurrentCost collectors", len(config.CurrentCost))
 	for _, ccConfig := range config.CurrentCost {
-		ccc, err := NewCurrentCostCollector(ccConfig)
+		ccc, err := cc.NewCurrentCostCollector(ccConfig)
 		if err != nil {
 			log.Fatal("Error in CurrentCost config: %v", err)
 		}
@@ -91,7 +93,7 @@ func main() {
 
 	if config.System != nil {
 		log.Print("Starting local system monitoring")
-		promm.MustRegister(NewSystemCollector(*config.System))
+		promm.MustRegister(linux.NewLinuxCollector(*config.System))
 	}
 
 	log.Print("Starting Prometheus metrics handler")
