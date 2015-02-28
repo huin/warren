@@ -12,8 +12,8 @@ const (
 )
 
 type CurrentCostConfig struct {
-	Name   string
 	Device string
+	Labels promm.Labels
 }
 
 type CurrentCostCollector struct {
@@ -23,19 +23,18 @@ type CurrentCostCollector struct {
 }
 
 func NewCurrentCostCollector(cfg CurrentCostConfig) *CurrentCostCollector {
-	monitorLabels := promm.Labels{"monitor": cfg.Name}
 	return &CurrentCostCollector{
 		cfg: cfg,
 		temperature: promm.NewGauge(promm.GaugeOpts{
 			Namespace: ccNamespace, Name: "temperature",
 			Help:        "Instananeous measured temperature at the monitor (degrees celcius).",
-			ConstLabels: monitorLabels,
+			ConstLabels: cfg.Labels,
 		}),
 		powerDraw: promm.NewGaugeVec(
 			promm.GaugeOpts{
 				Namespace: ccNamespace, Name: "power_draw",
 				Help:        "Instananeous power drawn measured by sensor (watts).",
-				ConstLabels: monitorLabels,
+				ConstLabels: cfg.Labels,
 			},
 			[]string{"sensor", "channel"},
 		),

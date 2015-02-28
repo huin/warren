@@ -12,8 +12,8 @@ const (
 )
 
 type SystemConfig struct {
-	Name        string
 	Filesystems []string
+	Labels      promm.Labels
 }
 
 type SystemCollector struct {
@@ -27,7 +27,6 @@ type SystemCollector struct {
 }
 
 func NewSystemCollector(cfg SystemConfig) *SystemCollector {
-	systemLabels := promm.Labels{"system": cfg.Name}
 	fsLabelNames := []string{"mount"}
 	return &SystemCollector{
 		cfg: cfg,
@@ -36,7 +35,7 @@ func NewSystemCollector(cfg SystemConfig) *SystemCollector {
 			promm.CounterOpts{
 				Namespace: systemNamespace, Name: "fs_stat_ops",
 				Help:        "Statfs calls by mount and result (cumulative calls).",
-				ConstLabels: systemLabels,
+				ConstLabels: cfg.Labels,
 			},
 			[]string{"mount", "result"},
 		),
@@ -45,7 +44,7 @@ func NewSystemCollector(cfg SystemConfig) *SystemCollector {
 			promm.GaugeOpts{
 				Namespace: systemNamespace, Name: "fs_size_bytes",
 				Help:        "Filesystem capacity (bytes).",
-				ConstLabels: systemLabels,
+				ConstLabels: cfg.Labels,
 			},
 			fsLabelNames,
 		),
@@ -53,7 +52,7 @@ func NewSystemCollector(cfg SystemConfig) *SystemCollector {
 			promm.GaugeOpts{
 				Namespace: systemNamespace, Name: "fs_free_bytes",
 				Help:        "Filesystem free space (bytes).",
-				ConstLabels: systemLabels,
+				ConstLabels: cfg.Labels,
 			},
 			fsLabelNames,
 		),
@@ -61,7 +60,7 @@ func NewSystemCollector(cfg SystemConfig) *SystemCollector {
 			promm.GaugeOpts{
 				Namespace: systemNamespace, Name: "fs_unpriv_free_bytes",
 				Help:        "Filesystem unpriviledged free space (bytes).",
-				ConstLabels: systemLabels,
+				ConstLabels: cfg.Labels,
 			},
 			fsLabelNames,
 		),
@@ -69,7 +68,7 @@ func NewSystemCollector(cfg SystemConfig) *SystemCollector {
 			promm.GaugeOpts{
 				Namespace: systemNamespace, Name: "fs_files",
 				Help:        "File count (files).",
-				ConstLabels: systemLabels,
+				ConstLabels: cfg.Labels,
 			},
 			fsLabelNames,
 		),
@@ -77,7 +76,7 @@ func NewSystemCollector(cfg SystemConfig) *SystemCollector {
 			promm.GaugeOpts{
 				Namespace: systemNamespace, Name: "fs_files_free",
 				Help:        "File free count (files).",
-				ConstLabels: systemLabels,
+				ConstLabels: cfg.Labels,
 			},
 			fsLabelNames,
 		),

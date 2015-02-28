@@ -76,6 +76,7 @@ func main() {
 		log.Fatal("Failed to read configuration: ", err)
 	}
 	initLogging(config.LogPath)
+	log.Print(config)
 
 	log.Printf("Starting %d Current Cost collectors", len(config.CurrentCost))
 	for _, ccConfig := range config.CurrentCost {
