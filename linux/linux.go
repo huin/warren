@@ -118,33 +118,33 @@ func NewLinuxCollector(cfg Config) (*LinuxCollector, error) {
 	}, nil
 }
 
-func (sc *LinuxCollector) Describe(ch chan<- *promm.Desc) {
-	sc.fsStatOps.Describe(ch)
-	sc.fsSizeBytes.Describe(ch)
-	sc.fsFreeBytes.Describe(ch)
-	sc.fsUnprivFreeBytes.Describe(ch)
-	sc.ifaceTxBytes.Describe(ch)
-	sc.ifaceRxBytes.Describe(ch)
-	sc.cpuCollector.Describe(ch)
+func (lc *LinuxCollector) Describe(ch chan<- *promm.Desc) {
+	lc.fsStatOps.Describe(ch)
+	lc.fsSizeBytes.Describe(ch)
+	lc.fsFreeBytes.Describe(ch)
+	lc.fsUnprivFreeBytes.Describe(ch)
+	lc.ifaceTxBytes.Describe(ch)
+	lc.ifaceRxBytes.Describe(ch)
+	lc.cpuCollector.Describe(ch)
 }
 
-func (sc *LinuxCollector) Collect(ch chan<- promm.Metric) {
+func (lc *LinuxCollector) Collect(ch chan<- promm.Metric) {
 	// Filesystems
-	for _, fs := range sc.cfg.Filesystems {
+	for _, fs := range lc.cfg.Filesystems {
 		var stat syscall.Statfs_t
 		if err := syscall.Statfs(fs, &stat); err != nil {
 			log.Print("Error stating filesystem %q: %v", fs, err)
-			sc.fsStatOps.With(promm.Labels{"mount": fs, "result": "error"}).Inc()
+			lc.fsStatOps.With(promm.Labels{"mount": fs, "result": "error"}).Inc()
 			continue
 		}
-		sc.fsStatOps.With(promm.Labels{"mount": fs, "result": "ok"}).Inc()
+		lc.fsStatOps.With(promm.Labels{"mount": fs, "result": "ok"}).Inc()
 		mountLabels := promm.Labels{"mount": fs}
 		bs := uint64(stat.Bsize)
-		sc.fsSizeBytes.With(mountLabels).Set(float64(bs * stat.Blocks))
-		sc.fsFreeBytes.With(mountLabels).Set(float64(bs * stat.Bfree))
-		sc.fsUnprivFreeBytes.With(mountLabels).Set(float64(bs * stat.Bavail))
-		sc.fsFiles.With(mountLabels).Set(float64(stat.Files))
-		sc.fsFilesFree.With(mountLabels).Set(float64(stat.Ffree))
+		lc.fsSizeBytes.With(mountLabels).Set(float64(bs * stat.Blocks))
+		lc.fsFreeBytes.With(mountLabels).Set(float64(bs * stat.Bfree))
+		lc.fsUnprivFreeBytes.With(mountLabels).Set(float64(bs * stat.Bavail))
+		lc.fsFiles.With(mountLabels).Set(float64(stat.Files))
+		lc.fsFilesFree.With(mountLabels).Set(float64(stat.Ffree))
 	}
 	// Networks
 	if ifaces, err := net.Interfaces(); err != nil {
@@ -152,19 +152,19 @@ func (sc *LinuxCollector) Collect(ch chan<- promm.Metric) {
 	} else {
 		for _, iface := range ifaces {
 			readIntFileIntoCounter(
-				sc.ifaceTxBytes.With(promm.Labels{"interface": iface.Name}),
+				lc.ifaceTxBytes.With(promm.Labels{"interface": iface.Name}),
 				filepath.Join(netPathSysClassNet, iface.Name, netPathStatsTxBytes))
 			readIntFileIntoCounter(
-				sc.ifaceRxBytes.With(promm.Labels{"interface": iface.Name}),
+				lc.ifaceRxBytes.With(promm.Labels{"interface": iface.Name}),
 				filepath.Join(netPathSysClassNet, iface.Name, netPathStatsRxBytes))
 		}
 	}
 
-	sc.fsStatOps.Collect(ch)
-	sc.fsSizeBytes.Collect(ch)
-	sc.fsFreeBytes.Collect(ch)
-	sc.fsUnprivFreeBytes.Collect(ch)
-	sc.ifaceTxBytes.Collect(ch)
-	sc.ifaceRxBytes.Collect(ch)
-	sc.cpuCollector.Collect(ch)
+	lc.fsStatOps.Collect(ch)
+	lc.fsSizeBytes.Collect(ch)
+	lc.fsFreeBytes.Collect(ch)
+	lc.fsUnprivFreeBytes.Collect(ch)
+	lc.ifaceTxBytes.Collect(ch)
+	lc.ifaceRxBytes.Collect(ch)
+	lc.cpuCollector.Collect(ch)
 }
