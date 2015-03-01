@@ -27,6 +27,8 @@ type CurrentCostCollector struct {
 	sensorCfgs      map[int]Sensor
 	histSensorsSeen map[int]struct{}
 	lastSeenDsb     int
+	realtimeUpdates *promm.CounterVec
+	historyUpdates  promm.Counter
 	temperature     promm.Gauge
 	powerDraw       *promm.GaugeVec
 	powerUsage      *promm.CounterVec
@@ -46,6 +48,21 @@ func NewCurrentCostCollector(cfg Config) (*CurrentCostCollector, error) {
 		sensorCfgs:      sensorCfgs,
 		histSensorsSeen: map[int]struct{}{},
 		lastSeenDsb:     -1,
+		realtimeUpdates: promm.NewCounterVec(
+			promm.CounterOpts{
+				Namespace: namespace, Name: "realtime_by_sensor_total",
+				Help:        "Count of realtime updates received, by sensor. (count)",
+				ConstLabels: cfg.Labels,
+			},
+			[]string{"sensor"},
+		),
+		historyUpdates: promm.NewCounter(
+			promm.CounterOpts{
+				Namespace: namespace, Name: "history_total",
+				Help:        "Count of historical updates received. (count)",
+				ConstLabels: cfg.Labels,
+			},
+		),
 		temperature: promm.NewGauge(promm.GaugeOpts{
 			Namespace: namespace, Name: "temperature",
 			Help:        "Instananeous measured temperature at the monitor. (degrees celcius)",
@@ -73,23 +90,27 @@ func NewCurrentCostCollector(cfg Config) (*CurrentCostCollector, error) {
 }
 
 func (ccc *CurrentCostCollector) Describe(ch chan<- *promm.Desc) {
+	ccc.realtimeUpdates.Describe(ch)
+	ccc.historyUpdates.Describe(ch)
 	ccc.temperature.Describe(ch)
 	ccc.powerDraw.Describe(ch)
 	ccc.powerUsage.Describe(ch)
 }
 
 func (ccc *CurrentCostCollector) Collect(ch chan<- promm.Metric) {
+	ccc.realtimeUpdates.Collect(ch)
+	ccc.historyUpdates.Collect(ch)
 	ccc.temperature.Collect(ch)
 	ccc.powerDraw.Collect(ch)
 	ccc.powerUsage.Collect(ch)
 }
 
-func (ccc *CurrentCostCollector) powerDrawReading(sensorCfg *Sensor, channel int, reading *gocc.Channel) {
+func (ccc *CurrentCostCollector) powerDrawReading(sensorName string, channel int, reading *gocc.Channel) {
 	if reading == nil {
 		return
 	}
 	ccc.powerDraw.With(promm.Labels{
-		"sensor":  sensorCfg.Name,
+		"sensor":  sensorName,
 		"channel": strconv.Itoa(channel),
 	},
 	).Set(float64(reading.Watts))
@@ -128,27 +149,35 @@ func (ccc *CurrentCostCollector) Run() error {
 	}
 }
 
+func (ccc *CurrentCostCollector) sensorName(sensor int) string {
+	sensorCfg, ok := ccc.sensorCfgs[sensor]
+	if !ok {
+		return strconv.Itoa(sensor)
+	}
+	return sensorCfg.Name
+}
+
 func (ccc *CurrentCostCollector) processRealtimeData(msg *gocc.Message) {
+	if msg.Sensor == nil || *msg.Sensor < 0 {
+		return
+	}
+
+	sensorName := ccc.sensorName(*msg.Sensor)
+	ccc.realtimeUpdates.With(promm.Labels{"sensor": sensorName}).Inc()
+
 	if msg.Temperature != nil {
 		ccc.temperature.Set(float64(*msg.Temperature))
 	}
 
-	if msg.Sensor != nil && *msg.Sensor >= 0 && msg.ID != nil {
-		sensorCfg, ok := ccc.sensorCfgs[*msg.Sensor]
-		if !ok {
-			sensorCfg = Sensor{
-				Name: strconv.Itoa(*msg.Sensor),
-			}
-		}
-		ccc.powerDrawReading(&sensorCfg, 1, msg.Channel1)
-		ccc.powerDrawReading(&sensorCfg, 2, msg.Channel2)
-		ccc.powerDrawReading(&sensorCfg, 3, msg.Channel3)
-	}
+	ccc.powerDrawReading(sensorName, 1, msg.Channel1)
+	ccc.powerDrawReading(sensorName, 2, msg.Channel2)
+	ccc.powerDrawReading(sensorName, 3, msg.Channel3)
 }
 
 // Produce cumulative power usage by accumulating most recent two-hourly data
 // into counters.
 func (ccc *CurrentCostCollector) processHistoricalData(msg *gocc.Message) {
+	ccc.historyUpdates.Inc()
 	for _, sensorHist := range msg.History.Sensors {
 		ccc.histSensorsSeen[sensorHist.Sensor] = struct{}{}
 		for _, point := range sensorHist.Points {
@@ -159,7 +188,8 @@ func (ccc *CurrentCostCollector) processHistoricalData(msg *gocc.Message) {
 			if u == gocc.HistTimeHour && o == 2 {
 				// We've found the data we want from this sensor's history (last
 				// 2-hours accumulated usage).
-				ccc.powerUsage.With(promm.Labels{"sensor": strconv.Itoa(sensorHist.Sensor)}).Add(float64(point.Value))
+				sensorName := ccc.sensorName(sensorHist.Sensor)
+				ccc.powerUsage.With(promm.Labels{"sensor": sensorName}).Add(float64(point.Value))
 				break
 			}
 		}
