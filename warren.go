@@ -58,16 +58,30 @@ func readConfig(filename string) (*Config, error) {
 	return config, nil
 }
 
-func monitorLoop(desc string, fn func() error) {
+func monitorLoop(name string, fn func() error) {
 	for {
 		if err := fn(); err != nil {
-			log.Printf("%s monitoring error (restarting): %v", desc, err)
+			log.Printf("%s monitoring error (restarting): %v", name, err)
 		} else {
-			log.Printf("%s returned without error (restarting)", desc)
+			log.Printf("%s returned without error (restarting)", name)
 		}
+		restartCounter.With(promm.Labels{"name": name}).Inc()
 		// Avoid tightlooping on recurring failure.
 		time.Sleep(5 * time.Second)
 	}
+}
+
+var restartCounter *promm.CounterVec
+
+func init() {
+	restartCounter = promm.NewCounterVec(
+		promm.CounterOpts{
+			Namespace: "warren", Name: "running_monitor_restarts_total",
+			Help: "Number of times a running monitor has restarted. (count)",
+		},
+		[]string{"name"},
+	)
+	promm.MustRegister(restartCounter)
 }
 
 func main() {
@@ -88,7 +102,7 @@ func main() {
 			log.Fatal("Error in CurrentCost: ", err)
 		}
 		promm.MustRegister(ccc)
-		go monitorLoop("CurrentCost", ccc.Run)
+		go monitorLoop("currentcost", ccc.Run)
 	}
 
 	if config.System != nil {
