@@ -88,9 +88,7 @@ func main() {
 			log.Fatal("Error in CurrentCost: ", err)
 		}
 		promm.MustRegister(ccc)
-		go monitorLoop("CurrentCost", func() error {
-			return ccc.Run()
-		})
+		go monitorLoop("CurrentCost", ccc.Run)
 	}
 
 	if config.System != nil {
