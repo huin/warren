@@ -23,10 +23,13 @@ type Sensor struct {
 }
 
 type CurrentCostCollector struct {
-	cfg         Config
-	sensorCfgs  map[int]Sensor
-	temperature promm.Gauge
-	powerDraw   *promm.GaugeVec
+	cfg             Config
+	sensorCfgs      map[int]Sensor
+	histSensorsSeen map[int]struct{}
+	lastSeenDsb     int
+	temperature     promm.Gauge
+	powerDraw       *promm.GaugeVec
+	powerUsage      *promm.CounterVec
 }
 
 func NewCurrentCostCollector(cfg Config) (*CurrentCostCollector, error) {
@@ -39,20 +42,32 @@ func NewCurrentCostCollector(cfg Config) (*CurrentCostCollector, error) {
 		sensorCfgs[sensorId] = sensorCfg
 	}
 	return &CurrentCostCollector{
-		cfg:        cfg,
-		sensorCfgs: sensorCfgs,
+		cfg:             cfg,
+		sensorCfgs:      sensorCfgs,
+		histSensorsSeen: map[int]struct{}{},
+		lastSeenDsb:     -1,
 		temperature: promm.NewGauge(promm.GaugeOpts{
 			Namespace: namespace, Name: "temperature",
-			Help:        "Instananeous measured temperature at the monitor (degrees celcius).",
+			Help:        "Instananeous measured temperature at the monitor. (degrees celcius)",
 			ConstLabels: cfg.Labels,
 		}),
 		powerDraw: promm.NewGaugeVec(
 			promm.GaugeOpts{
 				Namespace: namespace, Name: "power_draw",
-				Help:        "Instananeous power drawn measured by sensor (watts).",
+				Help:        "Instananeous power drawn measured by sensor. (watts)",
 				ConstLabels: cfg.Labels,
 			},
 			[]string{"sensor", "channel"},
+		),
+		powerUsage: promm.NewCounterVec(
+			promm.CounterOpts{
+				Namespace: namespace, Name: "power_usage_kwhr",
+				Help: "Cumulative (sum of all channels) power usage measured by sensor. " +
+					"This is accumulated from the latest 2-hourly historical data, so the " +
+					"timeseries resolution is coarse. (kilowatt hours)",
+				ConstLabels: cfg.Labels,
+			},
+			[]string{"sensor"},
 		),
 	}, nil
 }
@@ -60,11 +75,13 @@ func NewCurrentCostCollector(cfg Config) (*CurrentCostCollector, error) {
 func (ccc *CurrentCostCollector) Describe(ch chan<- *promm.Desc) {
 	ccc.temperature.Describe(ch)
 	ccc.powerDraw.Describe(ch)
+	ccc.powerUsage.Describe(ch)
 }
 
 func (ccc *CurrentCostCollector) Collect(ch chan<- promm.Metric) {
 	ccc.temperature.Collect(ch)
 	ccc.powerDraw.Collect(ch)
+	ccc.powerUsage.Collect(ch)
 }
 
 func (ccc *CurrentCostCollector) powerDrawReading(sensorCfg *Sensor, channel int, reading *gocc.Channel) {
@@ -95,23 +112,56 @@ func (ccc *CurrentCostCollector) Run() error {
 			return err
 		}
 
-		if msg.Temperature != nil {
-			ccc.temperature.Set(float64(*msg.Temperature))
-		}
-
-		if msg.Sensor != nil && *msg.Sensor >= 0 && msg.ID != nil {
-			sensorCfg, ok := ccc.sensorCfgs[*msg.Sensor]
-			if !ok {
-				sensorCfg = Sensor{
-					Name: strconv.Itoa(*msg.Sensor),
-				}
+		// Reset counters if DaysSinceBirth drops between readings.
+		if msg.DaysSinceBirth < ccc.lastSeenDsb {
+			for sensor := range ccc.histSensorsSeen {
+				ccc.powerUsage.With(promm.Labels{"sensor": strconv.Itoa(sensor)}).Set(0)
 			}
-			ccc.powerDrawReading(&sensorCfg, 1, msg.Channel1)
-			ccc.powerDrawReading(&sensorCfg, 2, msg.Channel2)
-			ccc.powerDrawReading(&sensorCfg, 3, msg.Channel3)
 		}
+		ccc.lastSeenDsb = msg.DaysSinceBirth
 
-		// TODO: Consider outputting historical data by accumulating their values
-		// into counters.
+		if msg.History == nil {
+			ccc.processRealtimeData(msg)
+		} else {
+			ccc.processHistoricalData(msg)
+		}
+	}
+}
+
+func (ccc *CurrentCostCollector) processRealtimeData(msg *gocc.Message) {
+	if msg.Temperature != nil {
+		ccc.temperature.Set(float64(*msg.Temperature))
+	}
+
+	if msg.Sensor != nil && *msg.Sensor >= 0 && msg.ID != nil {
+		sensorCfg, ok := ccc.sensorCfgs[*msg.Sensor]
+		if !ok {
+			sensorCfg = Sensor{
+				Name: strconv.Itoa(*msg.Sensor),
+			}
+		}
+		ccc.powerDrawReading(&sensorCfg, 1, msg.Channel1)
+		ccc.powerDrawReading(&sensorCfg, 2, msg.Channel2)
+		ccc.powerDrawReading(&sensorCfg, 3, msg.Channel3)
+	}
+}
+
+// Produce cumulative power usage by accumulating most recent two-hourly data
+// into counters.
+func (ccc *CurrentCostCollector) processHistoricalData(msg *gocc.Message) {
+	for _, sensorHist := range msg.History.Sensors {
+		ccc.histSensorsSeen[sensorHist.Sensor] = struct{}{}
+		for _, point := range sensorHist.Points {
+			u, o, err := point.Time()
+			if err != nil {
+				continue
+			}
+			if u == gocc.HistTimeHour && o == 2 {
+				// We've found the data we want from this sensor's history (last
+				// 2-hours accumulated usage).
+				ccc.powerUsage.With(promm.Labels{"sensor": strconv.Itoa(sensorHist.Sensor)}).Add(float64(point.Value))
+				break
+			}
+		}
 	}
 }
