@@ -50,7 +50,7 @@ func NewCurrentCostCollector(cfg Config) (*CurrentCostCollector, error) {
 		lastSeenDsb:     -1,
 		realtimeUpdates: promm.NewCounterVec(
 			promm.CounterOpts{
-				Namespace: namespace, Name: "realtime_by_sensor_total",
+				Namespace: namespace, Name: "realtime_by_sensor_count",
 				Help:        "Count of realtime updates received, by sensor. (count)",
 				ConstLabels: cfg.Labels,
 			},
@@ -58,19 +58,19 @@ func NewCurrentCostCollector(cfg Config) (*CurrentCostCollector, error) {
 		),
 		historyUpdates: promm.NewCounter(
 			promm.CounterOpts{
-				Namespace: namespace, Name: "history_total",
+				Namespace: namespace, Name: "history_count",
 				Help:        "Count of historical updates received. (count)",
 				ConstLabels: cfg.Labels,
 			},
 		),
 		temperature: promm.NewGauge(promm.GaugeOpts{
-			Namespace: namespace, Name: "temperature",
+			Namespace: namespace, Name: "temperature_degc",
 			Help:        "Instananeous measured temperature at the monitor. (degrees celcius)",
 			ConstLabels: cfg.Labels,
 		}),
 		powerDraw: promm.NewGaugeVec(
 			promm.GaugeOpts{
-				Namespace: namespace, Name: "power_draw",
+				Namespace: namespace, Name: "power_draw_watts",
 				Help:        "Instananeous power drawn measured by sensor. (watts)",
 				ConstLabels: cfg.Labels,
 			},

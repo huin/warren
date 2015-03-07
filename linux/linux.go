@@ -50,8 +50,8 @@ func NewLinuxCollector(cfg Config) (*LinuxCollector, error) {
 		// Meta-metrics:
 		fsStatOps: promm.NewCounterVec(
 			promm.CounterOpts{
-				Namespace: namespace, Name: "fs_stat_ops",
-				Help:        "Statfs calls by mount and result (cumulative calls).",
+				Namespace: namespace, Name: "fs_stat_ops_count",
+				Help:        "Statfs calls by mount and result (call count).",
 				ConstLabels: cfg.Labels,
 			},
 			[]string{"mount", "result"},
@@ -91,7 +91,7 @@ func NewLinuxCollector(cfg Config) (*LinuxCollector, error) {
 		),
 		fsFilesFree: promm.NewGaugeVec(
 			promm.GaugeOpts{
-				Namespace: namespace, Name: "fs_files_free",
+				Namespace: namespace, Name: "fs_free_files",
 				Help:        "File free count (files).",
 				ConstLabels: cfg.Labels,
 			},
