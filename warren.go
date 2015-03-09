@@ -16,6 +16,7 @@ import (
 	"github.com/BurntSushi/toml"
 	"github.com/huin/warren/cc"
 	"github.com/huin/warren/linux"
+	"github.com/huin/warren/streammatch"
 	promm "github.com/prometheus/client_golang/prometheus"
 )
 
@@ -26,8 +27,9 @@ var (
 type Config struct {
 	LogPath     string
 	Prometheus  PrometheusConfig
-	System      *linux.Config
 	CurrentCost []cc.Config
+	File        []streammatch.FileCfg
+	System      *linux.Config
 }
 
 type PrometheusConfig struct {
@@ -103,6 +105,14 @@ func main() {
 		}
 		promm.MustRegister(ccc)
 		go monitorLoop("currentcost", ccc.Run)
+	}
+
+	for _, fileConfig := range config.File {
+		fc, err := streammatch.NewFileCollector(fileConfig)
+		if err != nil {
+			log.Fatal("Error in CurrentCost: ", err)
+		}
+		promm.MustRegister(fc)
 	}
 
 	if config.System != nil {
