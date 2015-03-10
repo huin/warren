@@ -2,6 +2,8 @@ package streammatch
 
 import (
 	"errors"
+	"fmt"
+	"os"
 	"regexp"
 
 	"github.com/ActiveState/tail"
@@ -15,9 +17,6 @@ type FileCfg struct {
 
 type VarCfg struct {
 	promm.CounterOpts
-	/*Name        string
-	Help        string
-	ConstLabels promm.Labels*/
 	LabelNames []string
 	Match      []MatchCfg
 }
@@ -43,10 +42,20 @@ type matcher struct {
 }
 
 func NewFileCollector(cfg FileCfg) (*FileCollector, error) {
+	if len(cfg.Var) == 0 {
+		return nil, fmt.Errorf("no vars declared for file %q", cfg.File)
+	}
+
 	varMatchers := make([]varMatcher, 0, len(cfg.Var))
 	for _, varCfg := range cfg.Var {
 		if varCfg.Name == "" {
-			return nil, errors.New("missing/empty Var.Name in FileCollector config")
+			return nil, fmt.Errorf("missing/empty var name declared for file %q", cfg.File)
+		}
+		if varCfg.Help == "" {
+			return nil, fmt.Errorf("missing/empty help declared for file %q, var %q", cfg.File, varCfg.Name)
+		}
+		if len(varCfg.Match) == 0 {
+			return nil, fmt.Errorf("no match defined for file %q, var %q", cfg.File, varCfg.Name)
 		}
 
 		ctrVec := promm.NewCounterVec(varCfg.CounterOpts, varCfg.LabelNames)
@@ -58,7 +67,8 @@ func NewFileCollector(cfg FileCfg) (*FileCollector, error) {
 			}
 			ctr, err := ctrVec.GetMetricWithLabelValues(matchCfg.LabelValues...)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("%v for labels %v=%v, file %q, var %q",
+					err, varCfg.LabelNames, matchCfg.LabelValues, cfg.File, varCfg.Name)
 			}
 			matchers = append(matchers, matcher{re: re, ctr: ctr})
 		}
@@ -73,6 +83,7 @@ func NewFileCollector(cfg FileCfg) (*FileCollector, error) {
 		return nil, errors.New("missing File name in FileCollector config")
 	}
 	tailFile, err := tail.TailFile(cfg.File, tail.Config{
+		Location:    &tail.SeekInfo{0, os.SEEK_END},
 		ReOpen:      true,
 		MustExist:   false,
 		Follow:      true,

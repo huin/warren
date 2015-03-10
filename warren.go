@@ -97,7 +97,9 @@ func main() {
 	}
 	initLogging(config.LogPath)
 
-	log.Printf("Starting %d CurrentCost collectors", len(config.CurrentCost))
+	if len(config.CurrentCost) > 0 {
+		log.Printf("Starting %d CurrentCost collectors", len(config.CurrentCost))
+	}
 	for _, ccConfig := range config.CurrentCost {
 		ccc, err := cc.NewCurrentCostCollector(ccConfig)
 		if err != nil {
@@ -107,6 +109,9 @@ func main() {
 		go monitorLoop("currentcost", ccc.Run)
 	}
 
+	if len(config.File) > 0 {
+		log.Printf("Starting %d File collectors", len(config.File))
+	}
 	for _, fileConfig := range config.File {
 		fc, err := streammatch.NewFileCollector(fileConfig)
 		if err != nil {
