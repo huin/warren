@@ -31,16 +31,6 @@ type FileCollector struct {
 	varMatchers []varMatcher
 }
 
-type varMatcher struct {
-	ctrVec   *promm.CounterVec
-	matchers []matcher
-}
-
-type matcher struct {
-	re  *regexp.Regexp
-	ctr promm.Counter
-}
-
 func NewFileCollector(cfg FileCfg) (*FileCollector, error) {
 	if len(cfg.Var) == 0 {
 		return nil, fmt.Errorf("no vars declared for file %q", cfg.File)
@@ -48,35 +38,11 @@ func NewFileCollector(cfg FileCfg) (*FileCollector, error) {
 
 	varMatchers := make([]varMatcher, 0, len(cfg.Var))
 	for _, varCfg := range cfg.Var {
-		if varCfg.Name == "" {
-			return nil, fmt.Errorf("missing/empty var name declared for file %q", cfg.File)
+		varMatcher, err := newVarMatcher(varCfg)
+		if err != nil {
+			return nil, fmt.Errorf("%v, file %q", err, cfg.File)
 		}
-		if varCfg.Help == "" {
-			return nil, fmt.Errorf("missing/empty help declared for file %q, var %q", cfg.File, varCfg.Name)
-		}
-		if len(varCfg.Match) == 0 {
-			return nil, fmt.Errorf("no match defined for file %q, var %q", cfg.File, varCfg.Name)
-		}
-
-		ctrVec := promm.NewCounterVec(varCfg.CounterOpts, varCfg.LabelNames)
-		matchers := make([]matcher, 0, len(varCfg.Match))
-		for _, matchCfg := range varCfg.Match {
-			re, err := regexp.Compile(matchCfg.Pattern)
-			if err != nil {
-				return nil, err
-			}
-			ctr, err := ctrVec.GetMetricWithLabelValues(matchCfg.LabelValues...)
-			if err != nil {
-				return nil, fmt.Errorf("%v for labels %v=%v, file %q, var %q",
-					err, varCfg.LabelNames, matchCfg.LabelValues, cfg.File, varCfg.Name)
-			}
-			matchers = append(matchers, matcher{re: re, ctr: ctr})
-		}
-
-		varMatchers = append(varMatchers, varMatcher{
-			ctrVec:   ctrVec,
-			matchers: matchers,
-		})
+		varMatchers = append(varMatchers, varMatcher)
 	}
 
 	if cfg.File == "" {
@@ -127,4 +93,50 @@ func (fc *FileCollector) Collect(ch chan<- promm.Metric) {
 	for i := range fc.varMatchers {
 		fc.varMatchers[i].ctrVec.Collect(ch)
 	}
+}
+
+type varMatcher struct {
+	ctrVec   *promm.CounterVec
+	matchers []matcher
+}
+
+func newVarMatcher(varCfg VarCfg) (varMatcher, error) {
+	if varCfg.Name == "" {
+		return varMatcher{}, errors.New("missing/empty var name")
+	}
+	if varCfg.Help == "" {
+		return varMatcher{}, fmt.Errorf("missing/empty help declared for, var %q", varCfg.Name)
+	}
+	if len(varCfg.Match) == 0 {
+		return varMatcher{}, fmt.Errorf("no match defined for, var %q", varCfg.Name)
+	}
+
+	ctrVec := promm.NewCounterVec(varCfg.CounterOpts, varCfg.LabelNames)
+	matchers := make([]matcher, 0, len(varCfg.Match))
+	for _, matchCfg := range varCfg.Match {
+		matcher, err := newMatcher(matchCfg, ctrVec, varCfg.LabelNames)
+		if err != nil {
+			return varMatcher{}, fmt.Errorf("%v, var %q", err, varCfg.Name)
+		}
+		matchers = append(matchers, matcher)
+	}
+	return varMatcher{ctrVec: ctrVec, matchers: matchers}, nil
+}
+
+type matcher struct {
+	re  *regexp.Regexp
+	ctr promm.Counter
+}
+
+func newMatcher(matchCfg MatchCfg, ctrVec *promm.CounterVec, labelNames []string) (matcher, error) {
+	re, err := regexp.Compile(matchCfg.Pattern)
+	if err != nil {
+		return matcher{}, err
+	}
+	ctr, err := ctrVec.GetMetricWithLabelValues(matchCfg.LabelValues...)
+	if err != nil {
+		return matcher{}, fmt.Errorf("%v for labels %v=%v",
+			err, labelNames, matchCfg.LabelValues)
+	}
+	return matcher{re: re, ctr: ctr}, nil
 }
