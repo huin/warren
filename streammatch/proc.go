@@ -16,13 +16,13 @@ import (
 type ProcCfg struct {
 	// The command, first item being the executable name/path.
 	Command []string
-	// Configurations for the variable matching on stdout and stderr.
-	Stdout, Stderr []VarCfg
 	// The CWD for the process.
 	Dir string
 	// If the process exits, wait this long before restarting. Defaults to 30
 	// seconds if unspecified.
 	RetryInterval util.Duration
+	// Configurations for the variable matching on stdout and stderr.
+	Stdout, Stderr []VarCfg
 }
 
 type ProcCollector struct {
