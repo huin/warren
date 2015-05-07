@@ -29,6 +29,7 @@ type Config struct {
 	Prometheus  PrometheusConfig
 	CurrentCost []cc.Config
 	File        []streammatch.FileCfg
+	Proc        []streammatch.ProcCfg
 	System      *linux.Config
 }
 
@@ -110,12 +111,23 @@ func main() {
 	}
 
 	if len(config.File) > 0 {
-		log.Printf("Starting %d File collectors", len(config.File))
+		log.Printf("Starting %d FileCollectors", len(config.File))
 	}
 	for _, fileConfig := range config.File {
 		fc, err := streammatch.NewFileCollector(fileConfig)
 		if err != nil {
-			log.Fatal("Error in CurrentCost: ", err)
+			log.Fatal("Error in FileCollector: ", err)
+		}
+		promm.MustRegister(fc)
+	}
+
+	if len(config.Proc) > 0 {
+		log.Printf("Starting %d ProcCollectors", len(config.Proc))
+	}
+	for _, fileConfig := range config.Proc {
+		fc, err := streammatch.NewProcCollector(fileConfig)
+		if err != nil {
+			log.Fatal("Error in ProcCollector: ", err)
 		}
 		promm.MustRegister(fc)
 	}
