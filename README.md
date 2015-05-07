@@ -11,6 +11,8 @@ exports data from:
 
 * Linux OS-exposed data.
 * [CurrentCost](http://www.currentcost.com/) serial XML output.
+* Pattern-matched lines in "tailed" file(s).
+* Pattern-matched lines on stdout/stderr from command(s).
 
 ## Installation
 
