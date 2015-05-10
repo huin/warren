@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/huin/gocc"
+	"github.com/huin/warren/util"
 	promm "github.com/prometheus/client_golang/prometheus"
 )
 
@@ -27,6 +28,7 @@ type CurrentCostCollector struct {
 	sensorCfgs      map[int]Sensor
 	histSensorsSeen map[int]struct{}
 	lastSeenDsb     int
+	metrics         util.MetricCollection
 	realtimeUpdates *promm.CounterVec
 	historyUpdates  promm.Counter
 	temperature     promm.Gauge
@@ -43,12 +45,13 @@ func NewCurrentCostCollector(cfg Config) (*CurrentCostCollector, error) {
 		}
 		sensorCfgs[sensorId] = sensorCfg
 	}
-	return &CurrentCostCollector{
+	var metrics util.MetricCollection
+	ccc := &CurrentCostCollector{
 		cfg:             cfg,
 		sensorCfgs:      sensorCfgs,
 		histSensorsSeen: map[int]struct{}{},
 		lastSeenDsb:     -1,
-		realtimeUpdates: promm.NewCounterVec(
+		realtimeUpdates: metrics.NewCounterVec(
 			promm.CounterOpts{
 				Namespace: namespace, Name: "realtime_by_sensor_count",
 				Help:        "Count of realtime updates received, by sensor. (count)",
@@ -56,19 +59,19 @@ func NewCurrentCostCollector(cfg Config) (*CurrentCostCollector, error) {
 			},
 			[]string{"sensor"},
 		),
-		historyUpdates: promm.NewCounter(
+		historyUpdates: metrics.NewCounter(
 			promm.CounterOpts{
 				Namespace: namespace, Name: "history_count",
 				Help:        "Count of historical updates received. (count)",
 				ConstLabels: cfg.Labels,
 			},
 		),
-		temperature: promm.NewGauge(promm.GaugeOpts{
+		temperature: metrics.NewGauge(promm.GaugeOpts{
 			Namespace: namespace, Name: "temperature_degc",
 			Help:        "Instananeous measured temperature at the monitor. (degrees celcius)",
 			ConstLabels: cfg.Labels,
 		}),
-		powerDraw: promm.NewGaugeVec(
+		powerDraw: metrics.NewGaugeVec(
 			promm.GaugeOpts{
 				Namespace: namespace, Name: "power_draw_watts",
 				Help:        "Instananeous power drawn measured by sensor. (watts)",
@@ -76,7 +79,7 @@ func NewCurrentCostCollector(cfg Config) (*CurrentCostCollector, error) {
 			},
 			[]string{"sensor", "channel"},
 		),
-		powerUsage: promm.NewCounterVec(
+		powerUsage: metrics.NewCounterVec(
 			promm.CounterOpts{
 				Namespace: namespace, Name: "power_usage_kwhr",
 				Help: "Cumulative (sum of all channels) power usage measured by sensor. " +
@@ -86,23 +89,17 @@ func NewCurrentCostCollector(cfg Config) (*CurrentCostCollector, error) {
 			},
 			[]string{"sensor"},
 		),
-	}, nil
+	}
+	ccc.metrics = metrics
+	return ccc, nil
 }
 
 func (ccc *CurrentCostCollector) Describe(ch chan<- *promm.Desc) {
-	ccc.realtimeUpdates.Describe(ch)
-	ccc.historyUpdates.Describe(ch)
-	ccc.temperature.Describe(ch)
-	ccc.powerDraw.Describe(ch)
-	ccc.powerUsage.Describe(ch)
+	ccc.metrics.Describe(ch)
 }
 
 func (ccc *CurrentCostCollector) Collect(ch chan<- promm.Metric) {
-	ccc.realtimeUpdates.Collect(ch)
-	ccc.historyUpdates.Collect(ch)
-	ccc.temperature.Collect(ch)
-	ccc.powerDraw.Collect(ch)
-	ccc.powerUsage.Collect(ch)
+	ccc.metrics.Collect(ch)
 }
 
 func (ccc *CurrentCostCollector) powerDrawReading(sensorName string, channel int, reading *gocc.Channel) {

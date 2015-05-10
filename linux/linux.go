@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"syscall"
 
+	"github.com/huin/warren/util"
 	promm "github.com/prometheus/client_golang/prometheus"
 )
 
@@ -23,7 +24,8 @@ type Config struct {
 }
 
 type LinuxCollector struct {
-	cfg Config
+	cfg     Config
+	metrics util.MetricCollection
 	// Meta-metrics:
 	fsStatOps *promm.CounterVec
 	// Filesystem metrics:
@@ -35,20 +37,20 @@ type LinuxCollector struct {
 	// Network metrics:
 	ifaceTxBytes *promm.CounterVec
 	ifaceRxBytes *promm.CounterVec
-
-	cpuCollector *cpuCollector
 }
 
 func NewLinuxCollector(cfg Config) (*LinuxCollector, error) {
 	fsLabelNames := []string{"mount"}
-	cpuCollector, err := newCpuCollector(cfg.Cpu, cfg.Labels)
-	if err != nil {
+	var metrics util.MetricCollection
+	if cpuCollector, err := newCpuCollector(cfg.Cpu, cfg.Labels); err != nil {
 		return nil, err
+	} else {
+		metrics.Add(cpuCollector)
 	}
-	return &LinuxCollector{
+	lc := &LinuxCollector{
 		cfg: cfg,
 		// Meta-metrics:
-		fsStatOps: promm.NewCounterVec(
+		fsStatOps: metrics.NewCounterVec(
 			promm.CounterOpts{
 				Namespace: namespace, Name: "fs_stat_ops_count",
 				Help:        "Statfs calls by mount and result (call count).",
@@ -57,7 +59,7 @@ func NewLinuxCollector(cfg Config) (*LinuxCollector, error) {
 			[]string{"mount", "result"},
 		),
 		// Filesystem metrics:
-		fsSizeBytes: promm.NewGaugeVec(
+		fsSizeBytes: metrics.NewGaugeVec(
 			promm.GaugeOpts{
 				Namespace: namespace, Name: "fs_size_bytes",
 				Help:        "Filesystem capacity (bytes).",
@@ -65,7 +67,7 @@ func NewLinuxCollector(cfg Config) (*LinuxCollector, error) {
 			},
 			fsLabelNames,
 		),
-		fsFreeBytes: promm.NewGaugeVec(
+		fsFreeBytes: metrics.NewGaugeVec(
 			promm.GaugeOpts{
 				Namespace: namespace, Name: "fs_free_bytes",
 				Help:        "Filesystem free space (bytes).",
@@ -73,7 +75,7 @@ func NewLinuxCollector(cfg Config) (*LinuxCollector, error) {
 			},
 			fsLabelNames,
 		),
-		fsUnprivFreeBytes: promm.NewGaugeVec(
+		fsUnprivFreeBytes: metrics.NewGaugeVec(
 			promm.GaugeOpts{
 				Namespace: namespace, Name: "fs_unpriv_free_bytes",
 				Help:        "Filesystem unpriviledged free space (bytes).",
@@ -81,7 +83,7 @@ func NewLinuxCollector(cfg Config) (*LinuxCollector, error) {
 			},
 			fsLabelNames,
 		),
-		fsFiles: promm.NewGaugeVec(
+		fsFiles: metrics.NewGaugeVec(
 			promm.GaugeOpts{
 				Namespace: namespace, Name: "fs_files",
 				Help:        "File count (files).",
@@ -89,7 +91,7 @@ func NewLinuxCollector(cfg Config) (*LinuxCollector, error) {
 			},
 			fsLabelNames,
 		),
-		fsFilesFree: promm.NewGaugeVec(
+		fsFilesFree: metrics.NewGaugeVec(
 			promm.GaugeOpts{
 				Namespace: namespace, Name: "fs_free_files",
 				Help:        "File free count (files).",
@@ -98,7 +100,7 @@ func NewLinuxCollector(cfg Config) (*LinuxCollector, error) {
 			fsLabelNames,
 		),
 		// Network metrics:
-		ifaceTxBytes: promm.NewCounterVec(
+		ifaceTxBytes: metrics.NewCounterVec(
 			promm.CounterOpts{
 				Namespace: namespace, Name: "net_tx_bytes",
 				Help:        "Count of bytes transmitted by network interface (bytes).",
@@ -106,7 +108,7 @@ func NewLinuxCollector(cfg Config) (*LinuxCollector, error) {
 			},
 			[]string{"interface"},
 		),
-		ifaceRxBytes: promm.NewCounterVec(
+		ifaceRxBytes: metrics.NewCounterVec(
 			promm.CounterOpts{
 				Namespace: namespace, Name: "net_rx_bytes",
 				Help:        "Count of bytes received by network interface (bytes).",
@@ -114,18 +116,13 @@ func NewLinuxCollector(cfg Config) (*LinuxCollector, error) {
 			},
 			[]string{"interface"},
 		),
-		cpuCollector: cpuCollector,
-	}, nil
+	}
+	lc.metrics = metrics
+	return lc, nil
 }
 
 func (lc *LinuxCollector) Describe(ch chan<- *promm.Desc) {
-	lc.fsStatOps.Describe(ch)
-	lc.fsSizeBytes.Describe(ch)
-	lc.fsFreeBytes.Describe(ch)
-	lc.fsUnprivFreeBytes.Describe(ch)
-	lc.ifaceTxBytes.Describe(ch)
-	lc.ifaceRxBytes.Describe(ch)
-	lc.cpuCollector.Describe(ch)
+	lc.metrics.Describe(ch)
 }
 
 func (lc *LinuxCollector) Collect(ch chan<- promm.Metric) {
@@ -160,11 +157,5 @@ func (lc *LinuxCollector) Collect(ch chan<- promm.Metric) {
 		}
 	}
 
-	lc.fsStatOps.Collect(ch)
-	lc.fsSizeBytes.Collect(ch)
-	lc.fsFreeBytes.Collect(ch)
-	lc.fsUnprivFreeBytes.Collect(ch)
-	lc.ifaceTxBytes.Collect(ch)
-	lc.ifaceRxBytes.Collect(ch)
-	lc.cpuCollector.Collect(ch)
+	lc.metrics.Collect(ch)
 }

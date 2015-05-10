@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/huin/warren/util"
 	promm "github.com/prometheus/client_golang/prometheus"
 )
 
@@ -38,6 +39,7 @@ type CpuConfig struct {
 }
 
 type cpuCollector struct {
+	metrics      util.MetricCollection
 	combinedTime *promm.CounterVec
 	byCoreTime   *promm.CounterVec
 	// Kernel jiffy time in seconds (typically 1/100 or something).
@@ -75,7 +77,7 @@ func newCpuCollector(cfg CpuConfig, labels promm.Labels) (*cpuCollector, error) 
 	}
 
 	if cfg.Combined {
-		cc.combinedTime = promm.NewCounterVec(
+		cc.combinedTime = cc.metrics.NewCounterVec(
 			promm.CounterOpts{
 				Namespace: namespace, Name: "cpu_combined_seconds",
 				Help:        "CPU time spent in various states, combined cores (seconds).",
@@ -86,7 +88,7 @@ func newCpuCollector(cfg CpuConfig, labels promm.Labels) (*cpuCollector, error) 
 	}
 
 	if cfg.ByCore {
-		cc.byCoreTime = promm.NewCounterVec(
+		cc.byCoreTime = cc.metrics.NewCounterVec(
 			promm.CounterOpts{
 				Namespace: namespace, Name: "cpu_by_core_seconds",
 				Help:        "CPU time spent in various states, per core (seconds).",
@@ -100,24 +102,14 @@ func newCpuCollector(cfg CpuConfig, labels promm.Labels) (*cpuCollector, error) 
 }
 
 func (cc *cpuCollector) Describe(ch chan<- *promm.Desc) {
-	if cc.combinedTime != nil {
-		cc.combinedTime.Describe(ch)
-	}
-	if cc.byCoreTime != nil {
-		cc.byCoreTime.Describe(ch)
-	}
+	cc.metrics.Describe(ch)
 }
 
 func (cc *cpuCollector) Collect(ch chan<- promm.Metric) {
 	if err := cc.readStats(); err != nil {
 		log.Printf("Error reading CPU stats: %v", err)
 	}
-	if cc.combinedTime != nil {
-		cc.combinedTime.Collect(ch)
-	}
-	if cc.byCoreTime != nil {
-		cc.byCoreTime.Collect(ch)
-	}
+	cc.metrics.Collect(ch)
 }
 
 func (cc *cpuCollector) readStats() error {
