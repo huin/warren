@@ -130,7 +130,7 @@ func (lc *LinuxCollector) Collect(ch chan<- promm.Metric) {
 	for _, fs := range lc.cfg.Filesystems {
 		var stat syscall.Statfs_t
 		if err := syscall.Statfs(fs, &stat); err != nil {
-			log.Print("Error stating filesystem %q: %v", fs, err)
+			log.Printf("Error stating filesystem %q: %v", fs, err)
 			lc.fsStatOps.With(promm.Labels{"mount": fs, "result": "error"}).Inc()
 			continue
 		}
@@ -145,7 +145,7 @@ func (lc *LinuxCollector) Collect(ch chan<- promm.Metric) {
 	}
 	// Networks
 	if ifaces, err := net.Interfaces(); err != nil {
-		log.Print("Error getting network interfaces: %v", err)
+		log.Print("Error getting network interfaces: ", err)
 	} else {
 		for _, iface := range ifaces {
 			readIntFileIntoCounter(

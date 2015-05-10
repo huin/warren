@@ -41,7 +41,7 @@ func NewCurrentCostCollector(cfg Config) (*CurrentCostCollector, error) {
 	for sensorIdStr, sensorCfg := range cfg.Sensor {
 		sensorId, err := strconv.Atoi(sensorIdStr)
 		if err != nil || sensorId < 0 {
-			return nil, fmt.Errorf("bad sensor ID %q - must be an integer >= 0")
+			return nil, fmt.Errorf("bad sensor ID %q - must be an integer >= 0", sensorId)
 		}
 		sensorCfgs[sensorId] = sensorCfg
 	}

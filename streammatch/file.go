@@ -42,7 +42,7 @@ func NewFileCollector(cfg FileCfg) (*FileCollector, error) {
 
 func newFileTailChannel(filename string) (<-chan *tail.Line, error) {
 	tailFile, err := tail.TailFile(filename, tail.Config{
-		Location:    &tail.SeekInfo{0, os.SEEK_END},
+		Location:    &tail.SeekInfo{Offset: 0, Whence: os.SEEK_END},
 		ReOpen:      true,
 		MustExist:   false,
 		Follow:      true,

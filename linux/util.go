@@ -12,7 +12,7 @@ import (
 func readIntFileIntoCounter(ctr promm.Counter, path string) {
 	value, err := readIntFile(path)
 	if err != nil {
-		log.Printf("Unable to read integer from file %q for counter %s: %v",
+		log.Printf("Unable to read integer from file %q for counter %v: %v",
 			path, *ctr.Desc(), err)
 		return
 	}

@@ -80,7 +80,7 @@ func NewProcCollector(cfg ProcCfg) (*ProcCollector, error) {
 					// spawning processes we can't wait on.
 					return
 				} else {
-					log.Println("ProcCollector child process exited (restart in %v): %s",
+					log.Printf("ProcCollector child process exited (restart in %v): %s",
 						cfg.RetryInterval, state.String())
 				}
 			}
