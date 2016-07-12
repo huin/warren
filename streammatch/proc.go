@@ -7,7 +7,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/ActiveState/tail"
+	"github.com/hpcloud/tail"
 	"github.com/huin/warren/util"
 	promm "github.com/prometheus/client_golang/prometheus"
 )

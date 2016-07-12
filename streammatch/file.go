@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/ActiveState/tail"
+	"github.com/hpcloud/tail"
 )
 
 type FileCfg struct {

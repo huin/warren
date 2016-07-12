@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"regexp"
 
-	"github.com/ActiveState/tail"
+	"github.com/hpcloud/tail"
 	promm "github.com/prometheus/client_golang/prometheus"
 )
 
