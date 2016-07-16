@@ -3,6 +3,7 @@ package streammatch
 import (
 	"errors"
 	"fmt"
+	"log"
 	"regexp"
 
 	"github.com/hpcloud/tail"
@@ -37,20 +38,6 @@ func newVarMatcherSet(varCfgs []VarCfg) (varMatcherSet, error) {
 	return vms, nil
 }
 
-func (vms varMatcherSet) matchLines(lines <-chan *tail.Line) {
-	for line := range lines {
-		for i := range vms {
-			vm := &vms[i]
-			for j := range vm.matchers {
-				m := &vm.matchers[j]
-				if m.re.MatchString(line.Text) {
-					m.ctr.Inc()
-				}
-			}
-		}
-	}
-}
-
 func (vms varMatcherSet) Describe(ch chan<- *promm.Desc) {
 	for i := range vms {
 		vms[i].ctrVec.Describe(ch)
@@ -60,6 +47,18 @@ func (vms varMatcherSet) Describe(ch chan<- *promm.Desc) {
 func (vms varMatcherSet) Collect(ch chan<- promm.Metric) {
 	for i := range vms {
 		vms[i].ctrVec.Collect(ch)
+	}
+}
+
+func (vms varMatcherSet) matchLines(lines <-chan *tail.Line) {
+	for line := range lines {
+		for i := range vms {
+			vm := &vms[i]
+			for j := range vm.matchers {
+				m := &vm.matchers[j]
+				m.tryMatch(line)
+			}
+		}
 	}
 }
 
@@ -92,8 +91,15 @@ func newVarMatcher(varCfg VarCfg) (varMatcher, error) {
 }
 
 type matcher struct {
-	re  *regexp.Regexp
-	ctr promm.Counter
+	re     *regexp.Regexp
+	tmpls  []string
+	ctrVec *promm.CounterVec
+
+	// Mutable things below:
+	// Expanded labels from templates.
+	exp []string
+	// Retained allocation for Regexp.ExpandString.
+	alloc []byte
 }
 
 func newMatcher(matchCfg MatchCfg, ctrVec *promm.CounterVec, labelNames []string) (matcher, error) {
@@ -101,10 +107,37 @@ func newMatcher(matchCfg MatchCfg, ctrVec *promm.CounterVec, labelNames []string
 	if err != nil {
 		return matcher{}, err
 	}
-	ctr, err := ctrVec.GetMetricWithLabelValues(matchCfg.LabelValues...)
-	if err != nil {
-		return matcher{}, fmt.Errorf("%v for labels %v=%v",
-			err, labelNames, matchCfg.LabelValues)
+	if len(labelNames) != len(matchCfg.LabelValues) {
+		return matcher{}, fmt.Errorf("mismatched count of label names (%d) and values (%d)",
+			len(labelNames), len(matchCfg.LabelValues))
 	}
-	return matcher{re: re, ctr: ctr}, nil
+	return matcher{
+		re:     re,
+		tmpls:  matchCfg.LabelValues,
+		ctrVec: ctrVec,
+
+		exp:   make([]string, len(matchCfg.LabelValues)),
+		alloc: nil,
+	}, nil
+}
+
+func (m *matcher) tryMatch(line *tail.Line) {
+	match := m.re.FindStringSubmatchIndex(line.Text)
+	if match == nil {
+		return
+	}
+
+	for i, t := range m.tmpls {
+		dst := m.re.ExpandString(m.alloc[:0], t, line.Text, match)
+		m.exp[i] = string(dst)
+		// Retain allocation.
+		m.alloc = dst
+	}
+
+	ctr, err := m.ctrVec.GetMetricWithLabelValues(m.exp...)
+	if err != nil {
+		log.Printf("Error while getting metric: %v", err)
+		return
+	}
+	ctr.Inc()
 }
