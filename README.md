@@ -13,6 +13,7 @@ exports data from:
 * [CurrentCost](http://www.currentcost.com/) serial XML output.
 * Pattern-matched lines in "tailed" file(s).
 * Pattern-matched lines on stdout/stderr from command(s).
+* Metrics updated in response to HTTP requests.
 
 ## Installation
 
