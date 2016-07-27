@@ -23,7 +23,7 @@ type Config struct {
 	Labels      promm.Labels
 }
 
-type LinuxCollector struct {
+type Collector struct {
 	cfg     Config
 	metrics util.MetricCollection
 	// Meta-metrics:
@@ -39,7 +39,7 @@ type LinuxCollector struct {
 	ifaceRxBytes *promm.CounterVec
 }
 
-func NewLinuxCollector(cfg Config) (*LinuxCollector, error) {
+func New(cfg Config) (*Collector, error) {
 	fsLabelNames := []string{"mount"}
 	var metrics util.MetricCollection
 	if cpuCollector, err := newCpuCollector(cfg.Cpu, cfg.Labels); err != nil {
@@ -47,7 +47,7 @@ func NewLinuxCollector(cfg Config) (*LinuxCollector, error) {
 	} else {
 		metrics.Add(cpuCollector)
 	}
-	lc := &LinuxCollector{
+	lc := &Collector{
 		cfg: cfg,
 		// Meta-metrics:
 		fsStatOps: metrics.NewCounterVec(
@@ -121,11 +121,11 @@ func NewLinuxCollector(cfg Config) (*LinuxCollector, error) {
 	return lc, nil
 }
 
-func (lc *LinuxCollector) Describe(ch chan<- *promm.Desc) {
+func (lc *Collector) Describe(ch chan<- *promm.Desc) {
 	lc.metrics.Describe(ch)
 }
 
-func (lc *LinuxCollector) Collect(ch chan<- promm.Metric) {
+func (lc *Collector) Collect(ch chan<- promm.Metric) {
 	// Filesystems
 	for _, fs := range lc.cfg.Filesystems {
 		var stat syscall.Statfs_t

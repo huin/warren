@@ -105,55 +105,55 @@ func main() {
 	if len(config.CurrentCost) > 0 {
 		log.Printf("Starting %d CurrentCost collectors", len(config.CurrentCost))
 	}
-	for _, ccConfig := range config.CurrentCost {
-		ccc, err := cc.NewCurrentCostCollector(ccConfig)
+	for i, cfg := range config.CurrentCost {
+		c, err := cc.New(cfg)
 		if err != nil {
-			log.Fatal("Error in CurrentCost: ", err)
+			log.Fatalf("Error in CurrentCost[%d]: %v", i, err)
 		}
-		promm.MustRegister(ccc)
-		go monitorLoop("currentcost", ccc.Run)
+		promm.MustRegister(c)
+		go monitorLoop("currentcost", c.Run)
 	}
 
 	if len(config.File) > 0 {
-		log.Printf("Starting %d FileCollectors", len(config.File))
+		log.Printf("Starting %d File collectors", len(config.File))
 	}
-	for _, fileConfig := range config.File {
-		fc, err := streammatch.NewFileCollector(fileConfig)
+	for i, cfg := range config.File {
+		fc, err := streammatch.NewFileCollector(cfg)
 		if err != nil {
-			log.Fatal("Error in FileCollector: ", err)
+			log.Fatalf("Error in File[%d]: %v", i, err)
 		}
 		promm.MustRegister(fc)
 	}
 
 	if len(config.Proc) > 0 {
-		log.Printf("Starting %d ProcCollectors", len(config.Proc))
+		log.Printf("Starting %d Proc collectors", len(config.Proc))
 	}
-	for _, fileConfig := range config.Proc {
-		fc, err := streammatch.NewProcCollector(fileConfig)
+	for i, cfg := range config.Proc {
+		c, err := streammatch.NewProcCollector(cfg)
 		if err != nil {
-			log.Fatal("Error in ProcCollector: ", err)
+			log.Fatalf("Error in Proc[%d]: %v", i, err)
 		}
-		promm.MustRegister(fc)
+		promm.MustRegister(c)
 	}
 
 	if config.System != nil {
 		log.Print("Starting local system monitoring")
-		lc, err := linux.NewLinuxCollector(*config.System)
+		c, err := linux.New(*config.System)
 		if err != nil {
-			log.Fatal("Error in LinuxCollector: ", err)
+			log.Fatalf("Error in System: %v", err)
 		}
-		promm.MustRegister(lc)
+		promm.MustRegister(c)
 	}
 
 	if len(config.HTTPExport) > 0 {
-		log.Printf("Starting %d HTTPExports", len(config.HTTPExport))
+		log.Printf("Starting %d HTTPExport collectors", len(config.HTTPExport))
 	}
-	for _, hec := range config.HTTPExport {
-		he, err := httpexport.New(hec)
+	for i, hec := range config.HTTPExport {
+		c, err := httpexport.New(hec)
 		if err != nil {
-			log.Fatal("Error in HTTPExport: ", err)
+			log.Fatalf("Error in HTTPExport[%d]: %v", i, err)
 		}
-		promm.MustRegister(he)
+		promm.MustRegister(c)
 	}
 
 	log.Print("Starting Prometheus metrics handler")

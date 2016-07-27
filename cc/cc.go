@@ -16,16 +16,16 @@ const (
 type Config struct {
 	Device string
 	Labels promm.Labels
-	Sensor map[string]Sensor
+	Sensor map[string]SensorConfig
 }
 
-type Sensor struct {
+type SensorConfig struct {
 	Name string
 }
 
-type CurrentCostCollector struct {
+type Collector struct {
 	cfg             Config
-	sensorCfgs      map[int]Sensor
+	sensorCfgs      map[int]SensorConfig
 	histSensorsSeen map[int]struct{}
 	lastSeenDsb     int
 	metrics         util.MetricCollection
@@ -36,8 +36,8 @@ type CurrentCostCollector struct {
 	powerUsage      *promm.CounterVec
 }
 
-func NewCurrentCostCollector(cfg Config) (*CurrentCostCollector, error) {
-	sensorCfgs := map[int]Sensor{}
+func New(cfg Config) (*Collector, error) {
+	sensorCfgs := map[int]SensorConfig{}
 	for sensorIdStr, sensorCfg := range cfg.Sensor {
 		sensorId, err := strconv.Atoi(sensorIdStr)
 		if err != nil || sensorId < 0 {
@@ -46,7 +46,7 @@ func NewCurrentCostCollector(cfg Config) (*CurrentCostCollector, error) {
 		sensorCfgs[sensorId] = sensorCfg
 	}
 	var metrics util.MetricCollection
-	ccc := &CurrentCostCollector{
+	c := &Collector{
 		cfg:             cfg,
 		sensorCfgs:      sensorCfgs,
 		histSensorsSeen: map[int]struct{}{},
@@ -90,23 +90,23 @@ func NewCurrentCostCollector(cfg Config) (*CurrentCostCollector, error) {
 			[]string{"sensor"},
 		),
 	}
-	ccc.metrics = metrics
-	return ccc, nil
+	c.metrics = metrics
+	return c, nil
 }
 
-func (ccc *CurrentCostCollector) Describe(ch chan<- *promm.Desc) {
-	ccc.metrics.Describe(ch)
+func (c *Collector) Describe(ch chan<- *promm.Desc) {
+	c.metrics.Describe(ch)
 }
 
-func (ccc *CurrentCostCollector) Collect(ch chan<- promm.Metric) {
-	ccc.metrics.Collect(ch)
+func (c *Collector) Collect(ch chan<- promm.Metric) {
+	c.metrics.Collect(ch)
 }
 
-func (ccc *CurrentCostCollector) powerDrawReading(sensorName string, channel int, reading *gocc.Channel) {
+func (c *Collector) powerDrawReading(sensorName string, channel int, reading *gocc.Channel) {
 	if reading == nil {
 		return
 	}
-	ccc.powerDraw.With(promm.Labels{
+	c.powerDraw.With(promm.Labels{
 		"sensor":  sensorName,
 		"channel": strconv.Itoa(channel),
 	},
@@ -117,8 +117,8 @@ func (ccc *CurrentCostCollector) powerDrawReading(sensorName string, channel int
 // and self-updates. If it returns with an error, it is possible to re-run,
 // although some errors might reccur. E.g the device might not exist. This
 // could be a permanent or temporary condition.
-func (ccc *CurrentCostCollector) Run() error {
-	msgReader, err := gocc.NewSerialMessageReader(ccc.cfg.Device)
+func (c *Collector) Run() error {
+	msgReader, err := gocc.NewSerialMessageReader(c.cfg.Device)
 	if err != nil {
 		return err
 	}
@@ -131,52 +131,52 @@ func (ccc *CurrentCostCollector) Run() error {
 		}
 
 		// Reset counters if DaysSinceBirth drops between readings.
-		if msg.DaysSinceBirth < ccc.lastSeenDsb {
-			for sensor := range ccc.histSensorsSeen {
-				ccc.powerUsage.With(promm.Labels{"sensor": strconv.Itoa(sensor)}).Set(0)
+		if msg.DaysSinceBirth < c.lastSeenDsb {
+			for sensor := range c.histSensorsSeen {
+				c.powerUsage.With(promm.Labels{"sensor": strconv.Itoa(sensor)}).Set(0)
 			}
 		}
-		ccc.lastSeenDsb = msg.DaysSinceBirth
+		c.lastSeenDsb = msg.DaysSinceBirth
 
 		if msg.History == nil {
-			ccc.processRealtimeData(msg)
+			c.processRealtimeData(msg)
 		} else {
-			ccc.processHistoricalData(msg)
+			c.processHistoricalData(msg)
 		}
 	}
 }
 
-func (ccc *CurrentCostCollector) sensorName(sensor int) string {
-	sensorCfg, ok := ccc.sensorCfgs[sensor]
+func (c *Collector) sensorName(sensor int) string {
+	sensorCfg, ok := c.sensorCfgs[sensor]
 	if !ok {
 		return strconv.Itoa(sensor)
 	}
 	return sensorCfg.Name
 }
 
-func (ccc *CurrentCostCollector) processRealtimeData(msg *gocc.Message) {
+func (c *Collector) processRealtimeData(msg *gocc.Message) {
 	if msg.Sensor == nil || *msg.Sensor < 0 {
 		return
 	}
 
-	sensorName := ccc.sensorName(*msg.Sensor)
-	ccc.realtimeUpdates.With(promm.Labels{"sensor": sensorName}).Inc()
+	sensorName := c.sensorName(*msg.Sensor)
+	c.realtimeUpdates.With(promm.Labels{"sensor": sensorName}).Inc()
 
 	if msg.Temperature != nil {
-		ccc.temperature.Set(float64(*msg.Temperature))
+		c.temperature.Set(float64(*msg.Temperature))
 	}
 
-	ccc.powerDrawReading(sensorName, 1, msg.Channel1)
-	ccc.powerDrawReading(sensorName, 2, msg.Channel2)
-	ccc.powerDrawReading(sensorName, 3, msg.Channel3)
+	c.powerDrawReading(sensorName, 1, msg.Channel1)
+	c.powerDrawReading(sensorName, 2, msg.Channel2)
+	c.powerDrawReading(sensorName, 3, msg.Channel3)
 }
 
 // Produce cumulative power usage by accumulating most recent two-hourly data
 // into counters.
-func (ccc *CurrentCostCollector) processHistoricalData(msg *gocc.Message) {
-	ccc.historyUpdates.Inc()
+func (c *Collector) processHistoricalData(msg *gocc.Message) {
+	c.historyUpdates.Inc()
 	for _, sensorHist := range msg.History.Sensors {
-		ccc.histSensorsSeen[sensorHist.Sensor] = struct{}{}
+		c.histSensorsSeen[sensorHist.Sensor] = struct{}{}
 		for _, point := range sensorHist.Points {
 			u, o, err := point.Time()
 			if err != nil {
@@ -185,8 +185,8 @@ func (ccc *CurrentCostCollector) processHistoricalData(msg *gocc.Message) {
 			if u == gocc.HistTimeHour && o == 2 {
 				// We've found the data we want from this sensor's history (last
 				// 2-hours accumulated usage).
-				sensorName := ccc.sensorName(sensorHist.Sensor)
-				ccc.powerUsage.With(promm.Labels{"sensor": sensorName}).Add(float64(point.Value))
+				sensorName := c.sensorName(sensorHist.Sensor)
+				c.powerUsage.With(promm.Labels{"sensor": sensorName}).Add(float64(point.Value))
 				break
 			}
 		}
