@@ -15,6 +15,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/huin/warren/cc"
+	"github.com/huin/warren/httpexport"
 	"github.com/huin/warren/linux"
 	"github.com/huin/warren/streammatch"
 	promm "github.com/prometheus/client_golang/prometheus"
@@ -31,11 +32,14 @@ type Config struct {
 	File        []streammatch.FileCfg
 	Proc        []streammatch.ProcCfg
 	System      *linux.Config
+	HTTPExport  []httpexport.Config
 }
 
 type PrometheusConfig struct {
 	HandlerPath string
-	ServeAddr   string
+	// TODO: Deprecate ServeAddr and move into Config - it's not really specific
+	// to the Prometheus part of things.
+	ServeAddr string
 }
 
 func initLogging(logpath string) error {
@@ -139,6 +143,17 @@ func main() {
 			log.Fatal("Error in LinuxCollector: ", err)
 		}
 		promm.MustRegister(lc)
+	}
+
+	if len(config.HTTPExport) > 0 {
+		log.Printf("Starting %d HTTPExports", len(config.HTTPExport))
+	}
+	for _, hec := range config.HTTPExport {
+		he, err := httpexport.New(hec)
+		if err != nil {
+			log.Fatal("Error in HTTPExport: ", err)
+		}
+		promm.MustRegister(he)
 	}
 
 	log.Print("Starting Prometheus metrics handler")

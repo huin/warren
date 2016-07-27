@@ -1,8 +1,6 @@
 package util
 
-import (
-	promm "github.com/prometheus/client_golang/prometheus"
-)
+import promm "github.com/prometheus/client_golang/prometheus"
 
 type MetricCollection []promm.Collector
 
@@ -30,6 +28,12 @@ func (mc *MetricCollection) NewGauge(opts promm.GaugeOpts) promm.Gauge {
 
 func (mc *MetricCollection) NewGaugeVec(opts promm.GaugeOpts, labelNames []string) *promm.GaugeVec {
 	c := promm.NewGaugeVec(opts, labelNames)
+	mc.Add(c)
+	return c
+}
+
+func (mc *MetricCollection) NewHistogramVec(opts promm.HistogramOpts, labelNames []string) *promm.HistogramVec {
+	c := promm.NewHistogramVec(opts, labelNames)
 	mc.Add(c)
 	return c
 }
