@@ -87,9 +87,9 @@ func (c *Collector) handler(w http.ResponseWriter, r *http.Request) {
 
 	if c.counter != nil {
 		v := 1.0
-		if s := r.Form.Get("_inc"); s != "" {
+		if s := r.Form.Get("_add"); s != "" {
 			if v, err = strconv.ParseFloat(s, 64); err != nil {
-				http.Error(w, "Error parsing _inc argument: "+err.Error(), http.StatusBadRequest)
+				http.Error(w, "Error parsing _add argument: "+err.Error(), http.StatusBadRequest)
 				return
 			}
 		}
