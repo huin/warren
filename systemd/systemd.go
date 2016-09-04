@@ -5,6 +5,7 @@ import (
 	"log"
 
 	"github.com/coreos/go-systemd/dbus"
+	"github.com/huin/warren/nullmetric"
 	"github.com/huin/warren/util"
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -13,7 +14,10 @@ type Config struct {
 	// "dbus" or "direct", how to connect to systemd to query state.
 	ConnType ConnType `toml:"conn_type"`
 	// The constant labels to attach to the metrics.
-	ConstLabels prometheus.Labels `toml:"const_labels"`
+	ConstLabels   prometheus.Labels `toml:"const_labels"`
+	DisableLoaded bool              `toml:"disable_loaded"`
+	DisableActive bool              `toml:"disable_active"`
+	DisableFailed bool              `toml:"disable_failed"`
 }
 
 type ConnType int
@@ -54,9 +58,9 @@ type Collector struct {
 	conn    *dbus.Conn
 	metrics util.MetricCollection
 	units   map[string]*unitMetrics
-	loaded  *prometheus.GaugeVec
-	active  *prometheus.GaugeVec
-	failed  *prometheus.GaugeVec
+	loaded  nullmetric.GaugeVec
+	active  nullmetric.GaugeVec
+	failed  nullmetric.GaugeVec
 }
 
 func New(cfg Config) (*Collector, error) {
@@ -74,12 +78,14 @@ func New(cfg Config) (*Collector, error) {
 		return nil, fmt.Errorf("could not connect to systemd: %v", err)
 	}
 
-	var metrics util.MetricCollection
 	c := &Collector{
-		conn:    conn,
-		metrics: nil,
-		units:   make(map[string]*unitMetrics),
-		loaded: metrics.NewGaugeVec(
+		conn:  conn,
+		units: make(map[string]*unitMetrics),
+	}
+	if cfg.DisableLoaded {
+		c.loaded = nullmetric.NoopGaugeVec{}
+	} else {
+		c.loaded = c.metrics.NewGaugeVec(
 			prometheus.GaugeOpts{
 				Namespace:   "systemd",
 				Subsystem:   "units",
@@ -88,8 +94,12 @@ func New(cfg Config) (*Collector, error) {
 				ConstLabels: cfg.ConstLabels,
 			},
 			[]string{"unit"},
-		),
-		active: metrics.NewGaugeVec(
+		)
+	}
+	if cfg.DisableActive {
+		c.active = nullmetric.NoopGaugeVec{}
+	} else {
+		c.active = c.metrics.NewGaugeVec(
 			prometheus.GaugeOpts{
 				Namespace:   "systemd",
 				Subsystem:   "units",
@@ -98,8 +108,12 @@ func New(cfg Config) (*Collector, error) {
 				ConstLabels: cfg.ConstLabels,
 			},
 			[]string{"unit"},
-		),
-		failed: metrics.NewGaugeVec(
+		)
+	}
+	if cfg.DisableFailed {
+		c.failed = nullmetric.NoopGaugeVec{}
+	} else {
+		c.failed = c.metrics.NewGaugeVec(
 			prometheus.GaugeOpts{
 				Namespace:   "systemd",
 				Subsystem:   "units",
@@ -108,9 +122,11 @@ func New(cfg Config) (*Collector, error) {
 				ConstLabels: cfg.ConstLabels,
 			},
 			[]string{"unit"},
-		),
+		)
 	}
-	c.metrics = metrics
+	if len(c.metrics) == 0 {
+		return nil, fmt.Errorf("cannot disable all systemd metrics - remove [systemd] configuration instead")
+	}
 	return c, nil
 }
 
