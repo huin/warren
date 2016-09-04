@@ -56,6 +56,7 @@ type Collector struct {
 	units   map[string]*unitMetrics
 	loaded  *prometheus.GaugeVec
 	active  *prometheus.GaugeVec
+	failed  *prometheus.GaugeVec
 }
 
 func New(cfg Config) (*Collector, error) {
@@ -94,6 +95,16 @@ func New(cfg Config) (*Collector, error) {
 				Subsystem:   "units",
 				Name:        "active",
 				Help:        "1 if the unit is active, 0 otherwise.",
+				ConstLabels: cfg.ConstLabels,
+			},
+			[]string{"unit"},
+		),
+		failed: metrics.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Namespace:   "systemd",
+				Subsystem:   "units",
+				Name:        "failed",
+				Help:        "1 if the unit has failed, 0 otherwise.",
 				ConstLabels: cfg.ConstLabels,
 			},
 			[]string{"unit"},
@@ -137,6 +148,10 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) {
 				log.Printf("Error getting systemd active metric with label %q: %v", us.Name, err)
 				continue
 			}
+			if um.failed, err = c.failed.GetMetricWithLabelValues(us.Name); err != nil {
+				log.Printf("Error getting systemd failed metric with label %q: %v", us.Name, err)
+				continue
+			}
 			c.units[us.Name] = um
 		}
 		um.seen = true
@@ -148,6 +163,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) {
 		if !um.seen {
 			c.loaded.DeleteLabelValues(un)
 			c.active.DeleteLabelValues(un)
+			c.failed.DeleteLabelValues(un)
 			delete(c.units, un)
 		}
 	}
@@ -159,6 +175,7 @@ type unitMetrics struct {
 	seen   bool
 	loaded prometheus.Gauge
 	active prometheus.Gauge
+	failed prometheus.Gauge
 }
 
 func (um *unitMetrics) update(status *dbus.UnitStatus) {
@@ -167,9 +184,14 @@ func (um *unitMetrics) update(status *dbus.UnitStatus) {
 	} else {
 		um.loaded.Set(0)
 	}
-	if status.ActiveState == "active" {
-		um.active.Set(1)
-	} else {
-		um.active.Set(0)
+	var active, failed float64
+	switch status.ActiveState {
+	case "active":
+		active = 1
+	case "failed":
+		failed = 1
+	default: // Leave both states at 0.
 	}
+	um.active.Set(active)
+	um.failed.Set(failed)
 }
