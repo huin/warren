@@ -27,14 +27,17 @@ var (
 )
 
 type Config struct {
-	LogPath     string
-	Prometheus  PrometheusConfig
-	CurrentCost []cc.Config
-	File        []streammatch.FileCfg
-	Proc        []streammatch.ProcCfg
-	System      *linux.Config
-	Systemd     *systemd.Config
-	HTTPExport  []httpexport.Config
+	// Ignore unknown TOML keys found during parsing configuration.
+	// (unknown keys will be an error in future, for now they are simply logged)
+	IgnoreUnknownKeys bool `toml:"ignore_unknown_keys"`
+	LogPath           string
+	Prometheus        PrometheusConfig
+	CurrentCost       []cc.Config
+	File              []streammatch.FileCfg
+	Proc              []streammatch.ProcCfg
+	System            *linux.Config
+	Systemd           *systemd.Config
+	HTTPExport        []httpexport.Config
 }
 
 type PrometheusConfig struct {
@@ -60,9 +63,16 @@ func initLogging(logpath string) error {
 
 func readConfig(filename string) (*Config, error) {
 	config := new(Config)
-	_, err := toml.DecodeFile(filename, &config)
+	md, err := toml.DecodeFile(filename, &config)
 	if err != nil {
 		return nil, err
+	}
+	keys := md.Undecoded()
+	if !config.IgnoreUnknownKeys && len(keys) > 0 {
+		log.Printf("Found %d unknown keys in configuration file %q. This will be a fatal error in future, set `ignore_unknown_keys = true` to prevent this message or errors.", len(keys))
+		for _, key := range keys {
+			log.Printf("Unknown key: %q", key)
+		}
 	}
 	return config, nil
 }
