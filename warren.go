@@ -18,6 +18,7 @@ import (
 	"github.com/huin/warren/httpexport"
 	"github.com/huin/warren/linux"
 	"github.com/huin/warren/streammatch"
+	"github.com/huin/warren/systemd"
 	promm "github.com/prometheus/client_golang/prometheus"
 )
 
@@ -32,6 +33,7 @@ type Config struct {
 	File        []streammatch.FileCfg
 	Proc        []streammatch.ProcCfg
 	System      *linux.Config
+	Systemd     *systemd.Config
 	HTTPExport  []httpexport.Config
 }
 
@@ -141,6 +143,15 @@ func main() {
 		c, err := linux.New(*config.System)
 		if err != nil {
 			log.Fatalf("Error in System: %v", err)
+		}
+		promm.MustRegister(c)
+	}
+
+	if config.Systemd != nil {
+		log.Print("Starting local systemd monitoring")
+		c, err := systemd.New(*config.Systemd)
+		if err != nil {
+			log.Fatalf("Error in Systemd: %v", err)
 		}
 		promm.MustRegister(c)
 	}
