@@ -33,7 +33,7 @@ type Collector struct {
 	historyUpdates  promm.Counter
 	temperature     promm.Gauge
 	powerDraw       *promm.GaugeVec
-	powerUsage      *promm.CounterVec
+	powerUsage      *promm.GaugeVec
 }
 
 func New(cfg Config) (*Collector, error) {
@@ -79,8 +79,8 @@ func New(cfg Config) (*Collector, error) {
 			},
 			[]string{"sensor", "channel"},
 		),
-		powerUsage: metrics.NewCounterVec(
-			promm.CounterOpts{
+		powerUsage: metrics.NewGaugeVec(
+			promm.GaugeOpts{
 				Namespace: namespace, Name: "power_usage_kwhr",
 				Help: "Cumulative (sum of all channels) power usage measured by sensor. " +
 					"This is accumulated from the latest 2-hourly historical data, so the " +

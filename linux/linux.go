@@ -35,8 +35,8 @@ type Collector struct {
 	fsFiles           *promm.GaugeVec
 	fsFilesFree       *promm.GaugeVec
 	// Network metrics:
-	ifaceTxBytes *promm.CounterVec
-	ifaceRxBytes *promm.CounterVec
+	ifaceTxBytes *promm.GaugeVec
+	ifaceRxBytes *promm.GaugeVec
 }
 
 func New(cfg Config) (*Collector, error) {
@@ -100,16 +100,16 @@ func New(cfg Config) (*Collector, error) {
 			fsLabelNames,
 		),
 		// Network metrics:
-		ifaceTxBytes: metrics.NewCounterVec(
-			promm.CounterOpts{
+		ifaceTxBytes: metrics.NewGaugeVec(
+			promm.GaugeOpts{
 				Namespace: namespace, Name: "net_tx_bytes",
 				Help:        "Count of bytes transmitted by network interface (bytes).",
 				ConstLabels: cfg.Labels,
 			},
 			[]string{"interface"},
 		),
-		ifaceRxBytes: metrics.NewCounterVec(
-			promm.CounterOpts{
+		ifaceRxBytes: metrics.NewGaugeVec(
+			promm.GaugeOpts{
 				Namespace: namespace, Name: "net_rx_bytes",
 				Help:        "Count of bytes received by network interface (bytes).",
 				ConstLabels: cfg.Labels,
@@ -148,10 +148,10 @@ func (lc *Collector) Collect(ch chan<- promm.Metric) {
 		log.Print("Error getting network interfaces: ", err)
 	} else {
 		for _, iface := range ifaces {
-			readIntFileIntoCounter(
+			readIntFileIntoGauge(
 				lc.ifaceTxBytes.With(promm.Labels{"interface": iface.Name}),
 				filepath.Join(netPathSysClassNet, iface.Name, netPathStatsTxBytes))
-			readIntFileIntoCounter(
+			readIntFileIntoGauge(
 				lc.ifaceRxBytes.With(promm.Labels{"interface": iface.Name}),
 				filepath.Join(netPathSysClassNet, iface.Name, netPathStatsRxBytes))
 		}

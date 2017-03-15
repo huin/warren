@@ -9,7 +9,7 @@ import (
 	promm "github.com/prometheus/client_golang/prometheus"
 )
 
-func readIntFileIntoCounter(ctr promm.Counter, path string) {
+func readIntFileIntoGauge(ctr promm.Gauge, path string) {
 	value, err := readIntFile(path)
 	if err != nil {
 		log.Printf("Unable to read integer from file %q for counter %v: %v",

@@ -40,8 +40,8 @@ type CpuConfig struct {
 
 type cpuCollector struct {
 	metrics      util.MetricCollection
-	combinedTime *promm.CounterVec
-	byCoreTime   *promm.CounterVec
+	combinedTime *promm.GaugeVec
+	byCoreTime   *promm.GaugeVec
 	// Kernel jiffy time in seconds (typically 1/100 or something).
 	jiffiesScaler float64
 	// CPU metrics:
@@ -77,8 +77,8 @@ func newCpuCollector(cfg CpuConfig, labels promm.Labels) (*cpuCollector, error) 
 	}
 
 	if cfg.Combined {
-		cc.combinedTime = cc.metrics.NewCounterVec(
-			promm.CounterOpts{
+		cc.combinedTime = cc.metrics.NewGaugeVec(
+			promm.GaugeOpts{
 				Namespace: namespace, Name: "cpu_combined_seconds",
 				Help:        "CPU time spent in various states, combined cores (seconds).",
 				ConstLabels: labels,
@@ -88,8 +88,8 @@ func newCpuCollector(cfg CpuConfig, labels promm.Labels) (*cpuCollector, error) 
 	}
 
 	if cfg.ByCore {
-		cc.byCoreTime = cc.metrics.NewCounterVec(
-			promm.CounterOpts{
+		cc.byCoreTime = cc.metrics.NewGaugeVec(
+			promm.GaugeOpts{
 				Namespace: namespace, Name: "cpu_by_core_seconds",
 				Help:        "CPU time spent in various states, per core (seconds).",
 				ConstLabels: labels,
@@ -139,7 +139,7 @@ func (cc *cpuCollector) readStats() error {
 
 // values should be a "cpu"-prefixed set of values from /proc/stat.
 // cc.metricLabels must have "core" label set or removed as appropriate for cv.
-func (cc *cpuCollector) exportValues(values []string, cv *promm.CounterVec) {
+func (cc *cpuCollector) exportValues(values []string, cv *promm.GaugeVec) {
 	for stateIndex, valueStr := range values {
 		if stateIndex > len(cpuStates) {
 			break

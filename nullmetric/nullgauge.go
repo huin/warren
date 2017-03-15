@@ -34,8 +34,9 @@ type NoopGauge struct {
 
 var _ prometheus.Gauge = NoopGauge{}
 
-func (NoopGauge) Set(float64) {}
-func (NoopGauge) Inc()        {}
-func (NoopGauge) Dec()        {}
-func (NoopGauge) Add(float64) {}
-func (NoopGauge) Sub(float64) {}
+func (NoopGauge) Set(float64)       {}
+func (NoopGauge) Inc()              {}
+func (NoopGauge) Dec()              {}
+func (NoopGauge) Add(float64)       {}
+func (NoopGauge) Sub(float64)       {}
+func (NoopGauge) SetToCurrentTime() {}
